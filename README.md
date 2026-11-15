@@ -1,6 +1,6 @@
 # braveheart-databricks
 
-The Databricks workspace for [Braveheart](https://github.com/jwallace145/braveheart),
+The Databricks workspace for [Braveheart](https://github.com/Braveheart-Chess/braveheart),
 the UCI chess engine: a governed place to explore and analyse its NNUE training
 data with Unity Catalog, central compute policies, audit logs and tags on every
 resource.
