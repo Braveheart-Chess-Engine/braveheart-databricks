@@ -1,17 +1,17 @@
 # jwall-engineering-sites project file: a Databricks workspace for Braveheart.
 # The VPC range, cost center, compute policies it may use and the workspace
-# admins are set centrally (projects.braveheart.databricks in config.yaml).
+# admins are set centrally (projects.braveheart-databricks.databricks in config.yaml).
 # Fields and behaviour:
 # https://github.com/jwallace145/jwall-engineering-infra/blob/main/docs/databricks.md#the-project-file
 version: 1
-project: braveheart
+project: braveheart-databricks
 repository: jwallace145/braveheart-databricks
 
 # Project, Repository and Environment=prod are cross-checked; the CLI adds
 # ManagedBy, CostCenter and Workspace itself.
 tags:
   Organization: jwall-engineering
-  Project: braveheart
+  Project: braveheart-databricks
   Environment: prod
   Repository: jwallace145/braveheart-databricks
   Owner: jwallace145
