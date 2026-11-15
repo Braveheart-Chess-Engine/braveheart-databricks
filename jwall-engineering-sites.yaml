@@ -5,7 +5,7 @@
 # https://github.com/jwallace145/jwall-engineering-infra/blob/main/docs/databricks.md#the-project-file
 version: 1
 project: braveheart-databricks
-repository: jwallace145/braveheart-databricks
+repository: Braveheart-Chess/braveheart-databricks
 
 # Project, Repository and Environment=prod are cross-checked; the CLI adds
 # ManagedBy, CostCenter and Workspace itself.
@@ -13,7 +13,7 @@ tags:
   Organization: jwall-engineering
   Project: braveheart-databricks
   Environment: prod
-  Repository: jwallace145/braveheart-databricks
+  Repository: Braveheart-Chess/braveheart-databricks
   Owner: jwallace145
 
 components:
