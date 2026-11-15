@@ -15,3 +15,9 @@ See [docs/databricks.md](https://github.com/jwallace145/jwall-engineering-infra/
 The NNUE datasets stay owned by Braveheart (its `nnue` dataset in its own
 `jwall-engineering-sites.yaml`); this workspace is to be granted read-only
 access to them, declared on Braveheart's side.
+
+## Contributing
+
+Changes go through pull requests with one-line Conventional Commits; see
+[CONTRIBUTING.md](CONTRIBUTING.md). The rules for coding agents are in
+[AGENTS.md](AGENTS.md). Licensed under the [MIT License](LICENSE).
