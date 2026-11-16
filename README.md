@@ -27,22 +27,26 @@ The workspace reads Braveheart's self-play positions, **read-only**. Access is a
 handshake on a dataset the platform has onboarded, and needs all three:
 
 - jwall-engineering-infra onboards the dataset
-  (`datasets/braveheart-selfplay/positions.yaml`): its read-only role, storage
-  credential and external location, `jwall-engineering-ds-braveheart-selfplay-positions`;
+  (`datasets/braveheart-selfplay/positions.yaml`): in Unity Catalog it is the
+  schema `positions` in braveheart-selfplay's catalog, `braveheart_selfplay`,
+  holding one external volume, `files`;
 - [braveheart-selfplay](https://github.com/Braveheart-Chess/braveheart-selfplay),
   which owns the positions, lists this project under the dataset's `consumers`;
 - this repository lists the dataset under the workspace's `reads`, with its
   purpose.
 
-Either side revokes access alone by removing its half. Nothing here can write
-to the data: the storage credential and the external location are read-only,
-and the workspace users group is granted `READ_FILES` only
+Either side revokes access alone by removing its half. With both halves, the
+catalog `braveheart_selfplay` appears in this workspace's Catalog Explorer,
+bound read-only, next to `braveheart_databricks`. Nothing here can write to the
+data: the workspace users group holds `USE_CATALOG`, `USE_SCHEMA` and
+`READ_VOLUME` only, and the volume's storage is read-only. Other workspaces
+see only what is shared with them
 ([how it works](https://github.com/jwallace145/jwall-engineering-infra/blob/main/docs/databricks.md#datasets-and-access)).
 
 ### Reading the positions
 
 Once access is live, the data is under
-`s3://jwall-engineering-braveheart-selfplay-positions/data/selfplay/`:
+`/Volumes/braveheart_selfplay/positions/files/selfplay/`:
 `v1/gen=<N>/run=<run>/task=<t>/` holds gzipped `FEN | score | result` records
 in `positions/`, the full games in `games/` and one manifest per shard in
 `manifests/`, and `relabel/<label set>/gen=<N>/` holds relabelled scores
@@ -54,7 +58,7 @@ first, and start from one run.
 ```python
 from pyspark.sql import functions as F
 
-base = "s3://jwall-engineering-braveheart-selfplay-positions/data/selfplay/v1"
+base = "/Volumes/braveheart_selfplay/positions/files/selfplay/v1"
 display(dbutils.fs.ls(f"{base}/gen=6/"))
 
 records = spark.read.text(f"{base}/gen=6/run=<run>/task=t0/positions/*.txt.gz")
