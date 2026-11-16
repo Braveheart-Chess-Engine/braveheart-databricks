@@ -52,6 +52,19 @@ THEME.layout.update(
 
 _OUTCOME_COLOURS = {"white wins": "#f1f3f5", "draws": "#868e96", "black wins": "#4c6ef5"}
 _PHASE_COLOURS = {"opening": "#4dabf7", "middlegame": "#9775fa", "endgame": "#f783ac"}
+#: Categories the data names (how games ended), in order: never a generation's colour.
+_CATEGORY_PALETTE = [
+    "#4dabf7",
+    "#adb5bd",
+    "#ff6b6b",
+    "#ffd43b",
+    "#69db7c",
+    "#e599f7",
+    "#ffa94d",
+    "#3bc9db",
+    "#f06595",
+    "#a9e34b",
+]
 _SCORE_AXIS = "score (centipawns, white's point of view)"
 
 
@@ -154,11 +167,18 @@ def scale_bars(scales: pd.DataFrame, sample_label: str) -> go.Figure:
             hovertemplate="%{x}: best scale %{y:.0f}<br>%{customdata:,} positions<extra></extra>",
         )
     )
-    figure.add_hline(
+    figure.add_hline(y=SCALE, line={"color": "#ffffff", "dash": "dash", "width": 2})
+    # In the right margin, level with the line: inside, it would sit on a bar's label.
+    figure.add_annotation(
+        x=1,
+        xref="paper",
+        xanchor="left",
+        xshift=8,
         y=SCALE,
-        line={"color": "#ffffff", "dash": "dash", "width": 2},
-        annotation_text="the trainer's 400",
-        annotation_position="top left",
+        yref="y",
+        text="the trainer's 400",
+        showarrow=False,
+        font={"color": "#ffffff"},
     )
     return _finish(
         figure,
@@ -167,6 +187,7 @@ def scale_bars(scales: pd.DataFrame, sample_label: str) -> go.Figure:
         yaxis_title="best-fitting scale (centipawns)",
         showlegend=False,
         height=460,
+        margin={"r": 150},
     )
 
 
@@ -216,16 +237,17 @@ def _stacked(
     frame: pd.DataFrame, of: str, colours: Mapping[str, str], title: str, sample_label: str
 ) -> go.Figure:
     figure = go.Figure()
-    for value in [v for v in colours if v in set(frame[of])] + sorted(
-        set(frame[of]) - set(colours)
-    ):
+    named = [v for v in colours if v in set(frame[of])]
+    others = sorted(set(frame[of]) - set(colours))
+    palette = {v: _CATEGORY_PALETTE[i % len(_CATEGORY_PALETTE)] for i, v in enumerate(others)}
+    for value in named + others:
         rows = frame[frame[of] == value]
         figure.add_trace(
             go.Bar(
                 x=[f"gen {int(g)}" for g in rows["gen"]],
                 y=rows["share"],
                 name=str(value),
-                marker={"color": colours.get(value), "line": {"width": 0}},
+                marker={"color": colours.get(value, palette.get(value)), "line": {"width": 0}},
                 hovertemplate=f"%{{x}}: {value} %{{y:.1%}}<extra></extra>",
             )
         )
@@ -242,9 +264,7 @@ def _stacked(
 
 def results_mix(mix: pd.DataFrame, sample_label: str) -> go.Figure:
     """Per generation, how the positions' games ended."""
-    return _stacked(
-        mix, "outcome", _OUTCOME_COLOURS, "How the games ended, by generation", sample_label
-    )
+    return _stacked(mix, "outcome", _OUTCOME_COLOURS, "Results, by generation", sample_label)
 
 
 def phase_mix(phases: pd.DataFrame, sample_label: str) -> go.Figure:
@@ -289,7 +309,7 @@ def _lines(
 
 def score_ridgeline(hist: pd.DataFrame, sample_label: str) -> go.Figure:
     """Per generation, how the scores are spread."""
-    return _lines(hist, "bin", _SCORE_AXIS, "How the scores are spread", sample_label, fill=True)
+    return _lines(hist, "bin", _SCORE_AXIS, "How the scores are spread", sample_label, fill=False)
 
 
 def game_lengths(lengths: pd.DataFrame, sample_label: str) -> go.Figure:

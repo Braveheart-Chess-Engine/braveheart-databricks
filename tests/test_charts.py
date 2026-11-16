@@ -80,3 +80,34 @@ def test_generations_keep_one_colour_everywhere(gen: int) -> None:
         if trace.name == f"gen {gen}"
     }
     assert colours == {charts.generation_colour(gen)}
+
+
+def test_the_400_label_sits_in_the_right_margin() -> None:
+    figure = charts.scale_bars(
+        pd.DataFrame({"gen": [0, 6], "scale": [398.0, 510.0], "n": [9, 9]}), LABEL
+    )
+    (label,) = [a for a in figure.layout.annotations if a.text == "the trainer's 400"]
+    assert label.xref == "paper" and label.x == 1 and label.xanchor == "left" and label.y == 400
+
+
+def test_the_score_spread_draws_lines_only() -> None:
+    figure = charts.score_ridgeline(
+        pd.DataFrame({"gen": [0, 6], "bin": [0, 0], "share": [1.0, 1.0]}), LABEL
+    )
+    assert all(trace.fill in (None, "none") for trace in figure.data)
+
+
+def test_categories_never_use_a_generations_colour() -> None:
+    terms = pd.DataFrame({"gen": [6] * 7, "termination": list("abcdefg"), "share": [1 / 7] * 7})
+    figure = charts.terminations(terms, LABEL)
+    colours = [trace.marker.color for trace in figure.data]
+    generation_colours = {charts.generation_colour(g) for g in range(7)}
+    assert None not in colours and not set(colours) & generation_colours
+    assert len(set(colours)) == 7
+
+
+def test_the_results_chart_is_titled_apart_from_the_endings_chart() -> None:
+    shares = pd.DataFrame({"gen": [6], "share": [1.0]})
+    results = charts.results_mix(shares.assign(outcome="draws"), LABEL).layout.title.text
+    endings = charts.terminations(shares.assign(termination="checkmate"), LABEL).layout.title.text
+    assert "Results, by generation" in results and "How games finished" in endings
