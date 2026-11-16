@@ -16,13 +16,55 @@ resource.
 The workspace is provisioned by
 [jwall-engineering-infra](https://github.com/jwallace145/jwall-engineering-infra)
 from [`jwall-engineering-sites.yaml`](jwall-engineering-sites.yaml). This
-repository only says what the project asks for: its compute policies and its
-workspace users. The network, cost center, admins and guardrails are central.
+repository only says what the project asks for: its compute policies, its
+workspace users and the datasets it reads. The network, cost center, admins and
+guardrails are central.
 See [docs/databricks.md](https://github.com/jwallace145/jwall-engineering-infra/blob/main/docs/databricks.md).
 
-The NNUE datasets stay owned by Braveheart (its `nnue` dataset in its own
-`jwall-engineering-sites.yaml`); this workspace is to be granted read-only
-access to them, declared on Braveheart's side.
+## Datasets it reads
+
+The workspace reads Braveheart's self-play positions, **read-only**. Access is a
+handshake on a dataset the platform has onboarded, and needs all three:
+
+- jwall-engineering-infra onboards the dataset
+  (`datasets/braveheart-selfplay/positions.yaml`): its read-only role, storage
+  credential and external location, `jwall-engineering-ds-braveheart-selfplay-positions`;
+- [braveheart-selfplay](https://github.com/Braveheart-Chess/braveheart-selfplay),
+  which owns the positions, lists this project under the dataset's `consumers`;
+- this repository lists the dataset under the workspace's `reads`, with its
+  purpose.
+
+Either side revokes access alone by removing its half. Nothing here can write
+to the data: the storage credential and the external location are read-only,
+and the workspace users group is granted `READ_FILES` only
+([how it works](https://github.com/jwallace145/jwall-engineering-infra/blob/main/docs/databricks.md#datasets-and-access)).
+
+### Reading the positions
+
+Once access is live, the data is under
+`s3://jwall-engineering-braveheart-selfplay-positions/data/selfplay/`:
+`v1/gen=<N>/run=<run>/task=<t>/` holds gzipped `FEN | score | result` records
+in `positions/`, the full games in `games/` and one manifest per shard in
+`manifests/`, and `relabel/<label set>/gen=<N>/` holds relabelled scores
+([layout](https://github.com/Braveheart-Chess/braveheart-selfplay/blob/main/docs/datagen.md#layout-in-s3),
+[what each generation holds](https://github.com/Braveheart-Chess/braveheart-selfplay/blob/main/docs/datasets.md)).
+A generation is hundreds of millions of records: list a run's `manifests/`
+first, and start from one run.
+
+```python
+from pyspark.sql import functions as F
+
+base = "s3://jwall-engineering-braveheart-selfplay-positions/data/selfplay/v1"
+display(dbutils.fs.ls(f"{base}/gen=6/"))
+
+records = spark.read.text(f"{base}/gen=6/run=<run>/task=t0/positions/*.txt.gz")
+fields = F.split("value", r" \| ")
+positions = records.select(
+    fields[0].alias("fen"),
+    fields[1].cast("int").alias("score"),  # centipawns, white's point of view
+    fields[2].cast("double").alias("result"),  # 1.0, 0.5 or 0.0 for white
+)
+```
 
 ## Contributing
 
