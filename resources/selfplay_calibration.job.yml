@@ -1,0 +1,24 @@
+resources:
+  jobs:
+    selfplay_calibration:
+      name: selfplay-calibration
+      description: >-
+        How well the training target's score term, sigmoid(score / 400), predicts
+        braveheart-selfplay's game results, per generation and phase, with interactive
+        charts. Started by hand; samples 24 shards a generation unless told otherwise
+        (shards_per_generation: all reads every shard).
+      # No cluster: a notebook task without one runs on serverless compute.
+      tasks:
+        - task_key: report
+          notebook_task:
+            notebook_path: ../notebooks/selfplay_calibration.py
+      parameters:
+        - name: shards_per_generation
+          default: "24"
+        - name: generations
+          default: "0,1,2,3,4,5,6"
+        - name: label_set
+          default: original
+      max_concurrent_runs: 1
+      tags:
+        project: braveheart-databricks

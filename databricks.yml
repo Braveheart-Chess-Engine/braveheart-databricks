@@ -1,0 +1,39 @@
+# braveheart-databricks' bundle: analysis notebooks and the jobs that run them.
+#
+#   dev   (default) `databricks bundle deploy` from a laptop, under your own login:
+#         a private copy, with names prefixed by Databricks.
+#   prod  deployed only by CI on a merge to main (.github/workflows/deploy.yml),
+#         signed in as the project's deployer through GitHub OIDC (no secret), which
+#         also runs its jobs and reads only what the workspace's users may.
+#
+# No identifier lives here: the repository is public, so the workspace host, the
+# deployer's application ID and the account ID are variables of the GitHub
+# environment `prod`.
+bundle:
+  name: braveheart-databricks
+
+include:
+  - resources/*.yml
+
+variables:
+  deployer_application_id:
+    description: >-
+      The deployer's application ID (jwall-engineering-infra's Databricks apply output,
+      deployer_application_id). CI passes it as BUNDLE_VAR_deployer_application_id from
+      the prod environment's DATABRICKS_CLIENT_ID.
+    default: ""
+
+targets:
+  dev:
+    mode: development
+    default: true
+
+  prod:
+    mode: production
+    git:
+      branch: main
+    run_as:
+      service_principal_name: ${var.deployer_application_id}
+    permissions:
+      - group_name: braveheart-databricks-workspace-users
+        level: CAN_VIEW
