@@ -18,7 +18,7 @@ include:
 variables:
   deployer_application_id:
     description: >-
-      The deployer's application ID (jwall-engineering-infra's Databricks apply output,
+      The deployer's application ID (jaws's Databricks apply output,
       deployer_application_id). CI passes it as BUNDLE_VAR_deployer_application_id from
       the prod environment's DATABRICKS_CLIENT_ID.
     default: ""
