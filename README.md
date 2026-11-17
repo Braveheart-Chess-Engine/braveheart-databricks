@@ -17,8 +17,10 @@ The workspace is provisioned by
 [jwall-engineering-infra](https://github.com/jwallace145/jwall-engineering-infra)
 from [`jwall-engineering-sites.yaml`](jwall-engineering-sites.yaml). This
 repository only says what the project asks for: its compute policies, its
-workspace users and the datasets it reads. The network, cost center, admins and
-guardrails are central.
+workspace users, the datasets it reads and a deploy identity for its CI
+(`deployer: true`: a service principal GitHub Actions signs in as, with no
+secret, to deploy this repository's analyses). The network, cost center, admins
+and guardrails are central.
 See [docs/databricks.md](https://github.com/jwallace145/jwall-engineering-infra/blob/main/docs/databricks.md).
 
 ## Datasets it reads
