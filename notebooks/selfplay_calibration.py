@@ -23,15 +23,26 @@ dbutils.library.restartPython()
 
 # COMMAND ----------
 
-import glob
 import os
 import sys
 
 sys.path.insert(0, os.path.abspath("../src"))
 
 from selfplay_analysis import analysis, charts
-from selfplay_analysis.frames import bin_counts, game_counts, read_games, read_positions
-from selfplay_analysis.sampling import check_label_set, choose_shards, games_path_for
+from selfplay_analysis.frames import (
+    bin_counts,
+    game_counts,
+    read_games,
+    read_manifests,
+    read_positions,
+)
+from selfplay_analysis.sampling import (
+    check_label_set,
+    choose_shards,
+    discover_shards,
+    games_path_for,
+    manifest_path_for,
+)
 
 VOLUME = "/Volumes/braveheart_selfplay/positions/files/selfplay/v1"
 
@@ -46,35 +57,36 @@ check_label_set(dbutils.widgets.get("label_set").strip())
 
 # COMMAND ----------
 
-# Every positions shard of the chosen generations, then the sample.
-every_shard = {
-    gen: sorted(glob.glob(f"{VOLUME}/gen={gen}/run=*/task=*/positions/*.txt.gz"))
-    for gen in generations
-}
+# Every complete shard (its manifest exists: the producer uploads it last), then the
+# sample. The volume is listed first, so a missing grant fails here, naming it, rather
+# than reading as no shards.
+every_shard = discover_shards(VOLUME, generations)
 picked = choose_shards(every_shard, per_generation, seed=0)
 positions_paths = [path for paths in picked.values() for path in paths]
-games_paths = [games_path_for(path) for path in positions_paths]
 total = sum(len(paths) for paths in every_shard.values())
 print(f"{len(positions_paths):,} of {total:,} shards, generations {generations}")
 
 # COMMAND ----------
 
-# One pass over the positions and one over the games: serverless compute cannot
-# cache, so each pass reads its files once, and everything below comes from two
-# small tables.
+# One pass over the positions (bins and lines per file, together) and one over the
+# games: serverless compute cannot cache, so each pass reads its files once, and
+# everything below comes from small tables. The manifests say what each shard holds.
 try:
     spark.conf.set("spark.sql.files.ignoreCorruptFiles", "true")
 except Exception as exc:  # not every compute lets a notebook set it
     print(f"note: a corrupt file will fail the run ({type(exc).__name__})")
-bins = bin_counts(read_positions(spark, positions_paths))
-games = game_counts(read_games(spark, games_paths))
+bins, lines = bin_counts(read_positions(spark, positions_paths))
+expected = read_manifests(spark, [manifest_path_for(path) for path in positions_paths])
+games = game_counts(read_games(spark, [games_path_for(path) for path in positions_paths]))
 
+complete = analysis.completeness(lines, expected)
 positions_read = int(bins.loc[bins["ok"].astype(bool), "n"].sum())
+games_read = int(games["n"].sum())
+scope = "every shard" if per_generation is None else f"sample: {per_generation} shards a generation"
+sample_label = f"{scope}, {positions_read:,} positions"
+games_label = f"{scope}, {games_read:,} games"
+print(f"shards against their manifests: {complete}")
 skipped = analysis.skipped_lines(bins)
-if per_generation is None:
-    sample_label = f"every shard: {positions_read:,} positions"
-else:
-    sample_label = f"sample: {per_generation} shards a generation, {positions_read:,} positions"
 if skipped:
     print(f"lines that were not records, skipped: {skipped}")
 
@@ -87,9 +99,11 @@ if skipped:
 
 overview = {
     "positions": positions_read,
-    "games": int(games["n"].sum()),
+    "games": games_read,
     "generations": len(generations),
-    "share": len(positions_paths) / total,
+    "shards": len(positions_paths),
+    "total_shards": total,
+    **{key: complete[key] for key in ("short", "unreadable", "missing")},
 }
 charts.overview_tiles(overview, sample_label).show()
 
@@ -105,7 +119,8 @@ charts.overview_tiles(overview, sample_label).show()
 
 # COMMAND ----------
 
-charts.calibration_curves(analysis.calibration_table(bins), sample_label).show()
+shown = analysis.coverage_note(analysis.coverage(bins))
+charts.calibration_curves(analysis.calibration_table(bins), sample_label, detail=shown).show()
 
 # COMMAND ----------
 
@@ -118,7 +133,7 @@ charts.calibration_curves(analysis.calibration_table(bins), sample_label).show()
 # COMMAND ----------
 
 scales = analysis.fitted_scales(bins)
-charts.scale_bars(scales, sample_label).show()
+charts.scale_bars(scales, sample_label, detail=shown).show()
 
 # COMMAND ----------
 
@@ -132,7 +147,8 @@ charts.scale_bars(scales, sample_label).show()
 # COMMAND ----------
 
 by_phase = analysis.calibration_table(bins, by_phase=True)
-charts.phase_heatmap(by_phase, sample_label).show()
+shown_by_phase = analysis.coverage_note(analysis.coverage(bins, by_phase=True))
+charts.phase_heatmap(by_phase, sample_label, detail=shown_by_phase).show()
 
 # COMMAND ----------
 
@@ -142,7 +158,10 @@ charts.phase_heatmap(by_phase, sample_label).show()
 # COMMAND ----------
 
 charts.results_mix(analysis.results_mix(bins), sample_label).show()
-charts.score_ridgeline(analysis.score_histogram(bins), sample_label).show()
+window = analysis.coverage(bins)
+inside = window["positions"] - window["outside"]
+spread = f"{inside:,} positions within ±2,000 cp; {window['outside']:,} outside"
+charts.score_ridgeline(analysis.score_histogram(bins), sample_label, detail=spread).show()
 charts.phase_mix(analysis.phase_mix(bins), sample_label).show()
 
 # COMMAND ----------
@@ -155,8 +174,8 @@ charts.phase_mix(analysis.phase_mix(bins), sample_label).show()
 
 # COMMAND ----------
 
-charts.game_lengths(analysis.game_lengths(games), sample_label).show()
-charts.terminations(analysis.terminations(games), sample_label).show()
+charts.game_lengths(analysis.game_lengths(games), games_label).show()
+charts.terminations(analysis.terminations(games), games_label).show()
 
 # COMMAND ----------
 

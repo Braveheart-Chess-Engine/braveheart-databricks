@@ -68,16 +68,23 @@ _CATEGORY_PALETTE = [
 _SCORE_AXIS = "score (centipawns, white's point of view)"
 
 
-def _finish(figure: go.Figure, title: str, sample_label: str, **layout: object) -> go.Figure:
+def _finish(
+    figure: go.Figure,
+    title: str,
+    sample_label: str,
+    detail: str | None = None,
+    **layout: object,
+) -> go.Figure:
+    """Theme, title, the sample line and, when given, a detail line: what the chart shows
+    and leaves out."""
+    text = f"<b>{title}</b><br><sup>{sample_label}</sup>"
+    if detail:
+        text += f"<br><sup>{detail}</sup>"
     figure.update_layout(
-        template=THEME,
-        title={
-            "text": f"<b>{title}</b><br><sup>{sample_label}</sup>",
-            "x": 0.02,
-            "xanchor": "left",
-        },
-        **layout,
+        template=THEME, title={"text": text, "x": 0.02, "xanchor": "left"}, **layout
     )
+    if detail:
+        figure.update_layout(margin={"t": 118})
     return figure
 
 
@@ -85,13 +92,18 @@ def _generations(frame: pd.DataFrame) -> list[int]:
     return sorted(int(g) for g in frame["gen"].unique())
 
 
-def overview_tiles(overview: Mapping[str, float], sample_label: str) -> go.Figure:
-    """The dataset at a glance: positions and games read, generations, the sample's share."""
+def overview_tiles(overview: Mapping[str, int], sample_label: str) -> go.Figure:
+    """The dataset at a glance: positions and games read, shards read of all, generations,
+    and whether every shard read held what its manifest says."""
     tiles = [
         ("positions read", overview["positions"], {"valueformat": ",.0f"}),
         ("games read", overview["games"], {"valueformat": ",.0f"}),
+        (
+            "shards read",
+            overview["shards"],
+            {"valueformat": ",.0f", "suffix": f" of {overview['total_shards']:,}"},
+        ),
         ("generations", overview["generations"], {"valueformat": "d"}),
-        ("of the dataset", 100 * overview["share"], {"valueformat": ".2f", "suffix": "%"}),
     ]
     figure = go.Figure()
     for column, (label, value, number) in enumerate(tiles):
@@ -101,18 +113,39 @@ def overview_tiles(overview: Mapping[str, float], sample_label: str) -> go.Figur
                 value=value,
                 number={
                     **number,
-                    "font": {"size": 44, "color": generation_colour(LATEST - column)},
+                    "font": {"size": 40, "color": generation_colour(LATEST - column)},
                 },
                 title={"text": label, "font": {"size": 14}},
                 domain={"row": 0, "column": column},
             )
         )
+    incomplete = overview["short"] + overview["unreadable"]
+    if incomplete:
+        note = (
+            f"⚠ {incomplete:,} shard{'s' if incomplete != 1 else ''} short or unreadable "
+            "against their manifests: "
+            f"{overview['missing']:,} positions missing from every chart below"
+        )
+        colour = "#ff6b6b"
+    else:
+        note, colour = "✓ every shard complete against its manifest", "#69db7c"
+    figure.add_annotation(
+        text=note,
+        x=0.5,
+        xref="paper",
+        y=-0.08,
+        yref="paper",
+        showarrow=False,
+        font={"color": colour, "size": 14},
+    )
     return _finish(
-        figure, "The dataset at a glance", sample_label, grid={"rows": 1, "columns": 4}, height=240
+        figure, "The dataset at a glance", sample_label, grid={"rows": 1, "columns": 4}, height=260
     )
 
 
-def calibration_curves(table: pd.DataFrame, sample_label: str) -> go.Figure:
+def calibration_curves(
+    table: pd.DataFrame, sample_label: str, detail: str | None = None
+) -> go.Figure:
     """Per generation, white's mean result in each score bin, against sigmoid(score / 400)."""
     figure = go.Figure()
     for gen in _generations(table):
@@ -146,6 +179,7 @@ def calibration_curves(table: pd.DataFrame, sample_label: str) -> go.Figure:
         figure,
         "Do scores predict results?",
         sample_label,
+        detail=detail,
         xaxis_title=_SCORE_AXIS,
         yaxis={"title": "white's mean result", "range": [0, 1]},
         legend={"orientation": "h", "y": -0.18},
@@ -153,7 +187,7 @@ def calibration_curves(table: pd.DataFrame, sample_label: str) -> go.Figure:
     )
 
 
-def scale_bars(scales: pd.DataFrame, sample_label: str) -> go.Figure:
+def scale_bars(scales: pd.DataFrame, sample_label: str, detail: str | None = None) -> go.Figure:
     """Per generation, the scale that fits its results best, against the trainer's 400."""
     gens = [int(g) for g in scales["gen"]]
     figure = go.Figure(
@@ -184,6 +218,7 @@ def scale_bars(scales: pd.DataFrame, sample_label: str) -> go.Figure:
         figure,
         "Is 400 still the right scale?",
         sample_label,
+        detail=detail,
         yaxis_title="best-fitting scale (centipawns)",
         showlegend=False,
         height=460,
@@ -191,7 +226,7 @@ def scale_bars(scales: pd.DataFrame, sample_label: str) -> go.Figure:
     )
 
 
-def phase_heatmap(table: pd.DataFrame, sample_label: str) -> go.Figure:
+def phase_heatmap(table: pd.DataFrame, sample_label: str, detail: str | None = None) -> go.Figure:
     """Where the fit breaks: mean result minus expected, by score and phase, one generation
     at a time (the latest first; a menu picks another)."""
     gens = _generations(table)
@@ -225,6 +260,7 @@ def phase_heatmap(table: pd.DataFrame, sample_label: str) -> go.Figure:
         figure,
         "Where does the fit break?",
         sample_label,
+        detail=detail,
         xaxis_title=_SCORE_AXIS,
         updatemenus=[
             {"buttons": buttons, "active": len(gens) - 1, "x": 1.0, "xanchor": "right", "y": 1.16}
@@ -278,7 +314,13 @@ def terminations(terms: pd.DataFrame, sample_label: str) -> go.Figure:
 
 
 def _lines(
-    frame: pd.DataFrame, x: str, x_title: str, title: str, sample_label: str, fill: bool
+    frame: pd.DataFrame,
+    x: str,
+    x_title: str,
+    title: str,
+    sample_label: str,
+    fill: bool,
+    detail: str | None = None,
 ) -> go.Figure:
     figure = go.Figure()
     for gen in _generations(frame):
@@ -300,6 +342,7 @@ def _lines(
         figure,
         title,
         sample_label,
+        detail=detail,
         xaxis_title=x_title,
         yaxis={"tickformat": ".1%", "title": "share"},
         legend={"orientation": "h", "y": -0.18},
@@ -307,9 +350,17 @@ def _lines(
     )
 
 
-def score_ridgeline(hist: pd.DataFrame, sample_label: str) -> go.Figure:
+def score_ridgeline(hist: pd.DataFrame, sample_label: str, detail: str | None = None) -> go.Figure:
     """Per generation, how the scores are spread."""
-    return _lines(hist, "bin", _SCORE_AXIS, "How the scores are spread", sample_label, fill=False)
+    return _lines(
+        hist,
+        "bin",
+        _SCORE_AXIS,
+        "How the scores are spread",
+        sample_label,
+        fill=False,
+        detail=detail,
+    )
 
 
 def game_lengths(lengths: pd.DataFrame, sample_label: str) -> go.Figure:

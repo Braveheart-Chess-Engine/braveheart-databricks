@@ -92,3 +92,43 @@ def game_lengths(games: pd.DataFrame) -> pd.DataFrame:
 def terminations(games: pd.DataFrame) -> pd.DataFrame:
     """Per generation, the share of games ending each way."""
     return _shares(games[["gen", "termination", "n"]], "gen", "termination")
+
+
+def completeness(lines: pd.DataFrame, expected: pd.DataFrame) -> dict[str, int]:
+    """Lines read per positions file (gen, file, lines) against each shard's manifest
+    (file, positions): the shards read, those short of their manifest (a truncated file),
+    those with nothing read (an unreadable one), and the positions missing."""
+    merged = expected.merge(lines[["file", "lines"]], on="file", how="left")
+    merged["lines"] = merged["lines"].fillna(0)
+    short = merged[merged["lines"] < merged["positions"]]
+    return {
+        "shards": len(merged),
+        "short": int((short["lines"] > 0).sum()),
+        "unreadable": int((short["lines"] == 0).sum()),
+        "missing": int((short["positions"] - short["lines"]).sum()),
+    }
+
+
+def coverage(bins: pd.DataFrame, by_phase: bool = False) -> dict[str, int]:
+    """What a calibration chart shows and leaves out: the positions read, those in bins of
+    at least MIN_BIN within the window (shown), those in thinner bins, and those outside
+    the window. Bins are per generation (and phase, when the chart splits by phase)."""
+    ok = _ok(bins)
+    inside = ok[ok["bin"].abs() <= FIT_WINDOW]
+    keys = ["gen", "phase", "bin"] if by_phase else ["gen", "bin"]
+    sizes = inside.groupby(keys)["n"].sum()
+    return {
+        "positions": int(ok["n"].sum()),
+        "shown": int(sizes[sizes >= MIN_BIN].sum()),
+        "thin": int(sizes[sizes < MIN_BIN].sum()),
+        "outside": int(ok["n"].sum() - inside["n"].sum()),
+    }
+
+
+def coverage_note(counts: dict[str, int]) -> str:
+    """A chart's second subtitle line: what it shows and what it leaves out."""
+    return (
+        f"{counts['shown']:,} positions shown, in bins of at least {MIN_BIN} within "
+        f"±{FIT_WINDOW:,} cp; {counts['outside']:,} outside ±{FIT_WINDOW:,} cp; "
+        f"{counts['thin']:,} in thinner bins"
+    )

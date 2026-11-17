@@ -87,11 +87,12 @@ def test_bin_counts_aggregate_generation_phase_and_bin(spark, tmp_path: Path) ->
         "t0-w000-s00002.txt.gz",
         [f"{START} | 24 | 1.0", f"{START} | -20 | 0.5", f"{START} | 30 | 0.0", "bad"],
     )
-    bins = bin_counts(read_positions(spark, [path]))
-    ok = bins[bins["ok"]].set_index("bin")
+    bins, lines = bin_counts(read_positions(spark, [path]))
+    ok = bins[bins["ok"].astype(bool)].set_index("bin")
     assert ok.loc[0, "n"] == 2 and ok.loc[0, "wins"] == 1 and ok.loc[0, "draws"] == 1
     assert ok.loc[50, "n"] == 1 and ok.loc[50, "losses"] == 1
-    assert bins[~bins["ok"]]["n"].tolist() == [1]
+    assert bins[~bins["ok"].astype(bool)]["n"].tolist() == [1]
+    assert lines["lines"].tolist() == [4] and lines["gen"].tolist() == [3]  # every line read
 
 
 def test_read_games_counts_lengths_and_terminations(spark, tmp_path: Path) -> None:
@@ -119,3 +120,31 @@ def test_read_games_counts_lengths_and_terminations(spark, tmp_path: Path) -> No
     counts = game_counts(read_games(spark, [path])).set_index("termination")
     assert counts.loc["checkmate", "plies_bin"] == 80 and counts.loc["checkmate", "gen"] == 5
     assert counts.loc["repetition", "plies_bin"] == 120 and counts["n"].sum() == 2
+
+
+def _manifest_for(path: str) -> str:
+    return path.replace("/positions/", "/manifests/").replace(".txt.gz", ".json")
+
+
+def test_a_truncated_shard_reads_short_against_its_manifest(spark, tmp_path: Path) -> None:
+    from selfplay_analysis.analysis import completeness
+    from selfplay_analysis.frames import bin_counts, read_manifests, read_positions
+
+    records = [f"{START} | {i} | 0.5" for i in range(5000)]
+    whole = _shard(tmp_path, 4, "positions", "t0-w000-s00000.txt.gz", records)
+    cut = _shard(tmp_path, 4, "positions", "t0-w000-s00001.txt.gz", records)
+    data = Path(cut).read_bytes()
+    Path(cut).write_bytes(data[: len(data) // 2])  # a truncated upload
+    for path in (whole, cut):
+        manifest = Path(_manifest_for(path))
+        manifest.parent.mkdir(parents=True, exist_ok=True)
+        manifest.write_text(json.dumps({"shard": manifest.stem, "positions": 5000, "games": 50}))
+    spark.conf.set("spark.sql.files.ignoreCorruptFiles", "true")
+    try:
+        _, lines = bin_counts(read_positions(spark, [whole, cut]))
+        expected = read_manifests(spark, [_manifest_for(p) for p in (whole, cut)])
+    finally:
+        spark.conf.unset("spark.sql.files.ignoreCorruptFiles")
+    report = completeness(lines, expected)
+    assert report["shards"] == 2
+    assert report["short"] + report["unreadable"] == 1 and report["missing"] > 0

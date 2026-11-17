@@ -6,6 +6,16 @@ from selfplay_analysis import charts
 from selfplay_analysis.charts import THEME
 
 LABEL = "sample: 24 shards a generation, 4.2M positions"
+OVERVIEW = {
+    "positions": 4_200_000,
+    "games": 44_000,
+    "generations": 7,
+    "shards": 168,
+    "total_shards": 128_202,
+    "short": 0,
+    "unreadable": 0,
+    "missing": 0,
+}
 
 
 def _table(by_phase: bool = False) -> pd.DataFrame:
@@ -24,9 +34,7 @@ def _table(by_phase: bool = False) -> pd.DataFrame:
 def _figures() -> list[go.Figure]:
     shares = pd.DataFrame({"gen": [0, 6], "share": [0.5, 0.5]})
     return [
-        charts.overview_tiles(
-            {"positions": 4_200_000, "games": 44_000, "generations": 7, "share": 0.002}, LABEL
-        ),
+        charts.overview_tiles(OVERVIEW, LABEL),
         charts.calibration_curves(_table(), LABEL),
         charts.scale_bars(
             pd.DataFrame({"gen": [0, 6], "scale": [380.0, 410.0], "n": [9, 9]}), LABEL
@@ -111,3 +119,36 @@ def test_the_results_chart_is_titled_apart_from_the_endings_chart() -> None:
     results = charts.results_mix(shares.assign(outcome="draws"), LABEL).layout.title.text
     endings = charts.terminations(shares.assign(termination="checkmate"), LABEL).layout.title.text
     assert "Results, by generation" in results and "How games finished" in endings
+
+
+def test_the_overview_flags_incomplete_shards() -> None:
+    figure = charts.overview_tiles(
+        {**OVERVIEW, "short": 1, "unreadable": 1, "missing": 26_000}, LABEL
+    )
+    notes = " ".join(a.text for a in figure.layout.annotations)
+    assert "2 shards short or unreadable" in notes and "26,000 positions missing" in notes
+
+
+def test_the_overview_confirms_complete_shards() -> None:
+    notes = " ".join(a.text for a in charts.overview_tiles(OVERVIEW, LABEL).layout.annotations)
+    assert "every shard complete against its manifest" in notes
+
+
+def test_details_follow_the_sample_line() -> None:
+    detail = "217,000 positions shown, in bins of at least 200 within ±2,000 cp"
+    scales = pd.DataFrame({"gen": [0, 6], "scale": [380.0, 410.0], "n": [9, 9]})
+    shares = pd.DataFrame({"gen": [0, 6], "share": [0.5, 0.5], "bin": [0, 0]})
+    for figure in (
+        charts.calibration_curves(_table(), LABEL, detail=detail),
+        charts.scale_bars(scales, LABEL, detail=detail),
+        charts.phase_heatmap(_table(by_phase=True), LABEL, detail=detail),
+        charts.score_ridgeline(shares, LABEL, detail=detail),
+    ):
+        title = figure.layout.title.text
+        assert LABEL in title and detail in title and title.index(LABEL) < title.index(detail)
+
+
+def test_one_incomplete_shard_is_singular() -> None:
+    figure = charts.overview_tiles({**OVERVIEW, "short": 1, "missing": 12_500}, LABEL)
+    notes = " ".join(a.text for a in figure.layout.annotations)
+    assert "1 shard short or unreadable" in notes
