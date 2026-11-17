@@ -1,0 +1,38 @@
+[project]
+name = "selfplay-analysis"
+version = "0.0.0"
+description = "Analyses of Braveheart's self-play data, run in braveheart-databricks-prod. Not published: the bundle deploys it as source."
+requires-python = ">=3.12"
+dependencies = []
+
+# The workspace provides Spark and pandas; the notebook installs Plotly. These
+# pins are for local tests and CI only.
+[dependency-groups]
+dev = [
+  "pandas==2.3.3",
+  "plotly==7.1.0",
+  "pyspark==4.3.0",
+  "pytest==9.2.0",
+  "pyyaml==6.0.3",
+  "ruff==0.17.5",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+# Notebooks run in Databricks, which defines spark, dbutils and display, and they
+# import after setting up the path.
+[tool.ruff.lint.per-file-ignores]
+"notebooks/*.py" = ["F821", "E402"]

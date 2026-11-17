@@ -1,8 +1,10 @@
 # Guidance for coding agents
 
-This repository is one Databricks workspace project file,
+This repository is a Databricks workspace project file,
 [`jwall-engineering-sites.yaml`](jwall-engineering-sites.yaml), provisioned by
-[jwall-engineering-infra](https://github.com/jwallace145/jwall-engineering-infra). Read [README.md](README.md) for what the
+[jwall-engineering-infra](https://github.com/jwallace145/jwall-engineering-infra), and a Databricks asset bundle
+([`databricks.yml`](databricks.yml)) of analysis notebooks, jobs and their tested Python package
+(`src/selfplay_analysis/`). Read [README.md](README.md) for what the
 project is and [CONTRIBUTING.md](CONTRIBUTING.md) for the full rules. The rules
 below are the ones you MUST follow.
 
@@ -29,6 +31,10 @@ below are the ones you MUST follow.
   jwall-engineering-infra's `config.yaml`. Change them there, not here.
 - **`CHANGELOG.md` is Release Please's.** Never edit it by hand.
 - **Keep secrets out of the repo.** The project file holds no credentials.
+- **Never deploy the bundle's `prod` target yourself.** CI deploys it on merges to `main`, as the
+  project's deployer. From a laptop, deploy the `dev` target only.
+- **The GitHub environment `prod` and its variables are the owner's.** Never create or change them,
+  and never commit a workspace host, application ID or account ID: the repository is public.
 
 ## Before opening a PR
 
@@ -36,6 +42,7 @@ below are the ones you MUST follow.
 npm ci
 npx commitlint --from origin/main --to HEAD --verbose
 pre-commit run --all-files
+uv sync && uv run pytest && uv run ruff check . && uv run ruff format --check .
 ```
 
 ## Things that need the owner

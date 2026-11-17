@@ -1,14 +1,26 @@
 # Contributing
 
-This repository holds one file that matters, [`jwall-engineering-sites.yaml`](jwall-engineering-sites.yaml):
-what this Databricks workspace project asks for. [jwall-engineering-infra](https://github.com/jwallace145/jwall-engineering-infra)
-provisions the workspace from it. Everything else here is tooling for the rules below.
+This repository holds two things:
+
+- [`jwall-engineering-sites.yaml`](jwall-engineering-sites.yaml), what this Databricks workspace
+  project asks for. [jwall-engineering-infra](https://github.com/jwallace145/jwall-engineering-infra)
+  provisions the workspace from it.
+- A Databricks asset bundle, [`databricks.yml`](databricks.yml): analysis notebooks (`notebooks/`), the
+  jobs that run them (`resources/`) and their tested Python package (`src/selfplay_analysis/`).
 
 ## Setup
 
 ```sh
 npm ci                                                          # commitlint
+uv sync                                                         # Python, for the bundle's package
 pre-commit install --hook-type commit-msg --hook-type pre-commit
+```
+
+Before a pull request, run the tests and the linters:
+
+```sh
+uv run pytest                    # the Spark tests need a JDK 17 or 21; they skip without one, never in CI
+uv run ruff check . && uv run ruff format --check .
 ```
 
 The hooks are a convenience. CI is the authoritative check.
@@ -50,7 +62,12 @@ Every change reaches `main` through a pull request. Nobody pushes to `main`.
 
 ## How a change reaches the workspace
 
-Merging here applies nothing. The infra repository reads the project file from
+**The bundle** deploys when its change merges: the **Deploy** workflow signs in
+as the project's deployer (GitHub OIDC, no secret) and runs
+`databricks bundle deploy -t prod`. Nobody deploys `prod` by hand; deploy the
+`dev` target from your laptop to try a change first (README, *Developing*).
+
+**The project file** is applied by the infra repository, which reads it from
 this repository's `main`:
 
 1. Merge the change to `main`.

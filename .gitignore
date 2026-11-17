@@ -3,3 +3,12 @@ node_modules/
 
 # jwall-engineering-sites run artifacts
 .jwall-engineering-sites/
+
+# Python (the bundle syncs what git does not ignore)
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+
+# Databricks bundle state
+.databricks/

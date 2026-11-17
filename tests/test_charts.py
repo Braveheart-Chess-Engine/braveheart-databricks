@@ -1,0 +1,154 @@
+import pandas as pd
+import plotly.graph_objects as go
+import pytest
+
+from selfplay_analysis import charts
+from selfplay_analysis.charts import THEME
+
+LABEL = "sample: 24 shards a generation, 4.2M positions"
+OVERVIEW = {
+    "positions": 4_200_000,
+    "games": 44_000,
+    "generations": 7,
+    "shards": 168,
+    "total_shards": 128_202,
+    "short": 0,
+    "unreadable": 0,
+    "missing": 0,
+}
+
+
+def _table(by_phase: bool = False) -> pd.DataFrame:
+    rows = []
+    for gen in (0, 6):
+        for phase in ("opening", "endgame") if by_phase else (None,):
+            for centre in (-100, 0, 100):
+                row = {"gen": gen, "bin": centre, "n": 500, "mean_result": 0.5, "expected": 0.5}
+                if phase:
+                    row["phase"] = phase
+                row["error"] = row["mean_result"] - row["expected"]
+                rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _figures() -> list[go.Figure]:
+    shares = pd.DataFrame({"gen": [0, 6], "share": [0.5, 0.5]})
+    return [
+        charts.overview_tiles(OVERVIEW, LABEL),
+        charts.calibration_curves(_table(), LABEL),
+        charts.scale_bars(
+            pd.DataFrame({"gen": [0, 6], "scale": [380.0, 410.0], "n": [9, 9]}), LABEL
+        ),
+        charts.phase_heatmap(_table(by_phase=True), LABEL),
+        charts.results_mix(shares.assign(outcome="draws"), LABEL),
+        charts.phase_mix(shares.assign(phase="opening"), LABEL),
+        charts.score_ridgeline(shares.assign(bin=0), LABEL),
+        charts.game_lengths(shares.assign(plies_bin=80), LABEL),
+        charts.terminations(shares.assign(termination="checkmate"), LABEL),
+    ]
+
+
+def test_titles_name_the_sample() -> None:
+    for figure in _figures():
+        assert LABEL in figure.layout.title.text
+
+
+def test_every_figure_uses_the_theme() -> None:
+    for figure in _figures():
+        assert figure.layout.template.layout.colorway == THEME.layout.colorway
+        assert figure.layout.template.layout.paper_bgcolor == THEME.layout.paper_bgcolor
+
+
+def test_calibration_curves_has_a_reference_line() -> None:
+    names = [trace.name for trace in charts.calibration_curves(_table(), LABEL).data]
+    assert "sigmoid(score / 400)" in names
+    assert {"gen 0", "gen 6"} <= set(names)
+
+
+def test_scale_bars_mark_the_trainers_400() -> None:
+    figure = charts.scale_bars(
+        pd.DataFrame({"gen": [0, 6], "scale": [380.0, 410.0], "n": [9, 9]}), LABEL
+    )
+    assert any(shape.y0 == 400 and shape.y1 == 400 for shape in figure.layout.shapes)
+
+
+def test_phase_heatmap_centres_its_colours_on_zero_and_shows_the_latest_generation() -> None:
+    figure = charts.phase_heatmap(_table(by_phase=True), LABEL)
+    heatmaps = [trace for trace in figure.data if isinstance(trace, go.Heatmap)]
+    assert heatmaps and all(trace.zmid == 0 for trace in heatmaps)
+    assert [trace.visible for trace in heatmaps] == [False, True]  # gen 0 hidden, gen 6 shown
+
+
+@pytest.mark.parametrize("gen", [0, 6])
+def test_generations_keep_one_colour_everywhere(gen: int) -> None:
+    colours = {
+        trace.marker.color if trace.marker.color is not None else trace.line.color
+        for figure in (charts.calibration_curves(_table(), LABEL),)
+        for trace in figure.data
+        if trace.name == f"gen {gen}"
+    }
+    assert colours == {charts.generation_colour(gen)}
+
+
+def test_the_400_label_sits_in_the_right_margin() -> None:
+    figure = charts.scale_bars(
+        pd.DataFrame({"gen": [0, 6], "scale": [398.0, 510.0], "n": [9, 9]}), LABEL
+    )
+    (label,) = [a for a in figure.layout.annotations if a.text == "the trainer's 400"]
+    assert label.xref == "paper" and label.x == 1 and label.xanchor == "left" and label.y == 400
+
+
+def test_the_score_spread_draws_lines_only() -> None:
+    figure = charts.score_ridgeline(
+        pd.DataFrame({"gen": [0, 6], "bin": [0, 0], "share": [1.0, 1.0]}), LABEL
+    )
+    assert all(trace.fill in (None, "none") for trace in figure.data)
+
+
+def test_categories_never_use_a_generations_colour() -> None:
+    terms = pd.DataFrame({"gen": [6] * 7, "termination": list("abcdefg"), "share": [1 / 7] * 7})
+    figure = charts.terminations(terms, LABEL)
+    colours = [trace.marker.color for trace in figure.data]
+    generation_colours = {charts.generation_colour(g) for g in range(7)}
+    assert None not in colours and not set(colours) & generation_colours
+    assert len(set(colours)) == 7
+
+
+def test_the_results_chart_is_titled_apart_from_the_endings_chart() -> None:
+    shares = pd.DataFrame({"gen": [6], "share": [1.0]})
+    results = charts.results_mix(shares.assign(outcome="draws"), LABEL).layout.title.text
+    endings = charts.terminations(shares.assign(termination="checkmate"), LABEL).layout.title.text
+    assert "Results, by generation" in results and "How games finished" in endings
+
+
+def test_the_overview_flags_incomplete_shards() -> None:
+    figure = charts.overview_tiles(
+        {**OVERVIEW, "short": 1, "unreadable": 1, "missing": 26_000}, LABEL
+    )
+    notes = " ".join(a.text for a in figure.layout.annotations)
+    assert "2 shards short or unreadable" in notes and "26,000 positions missing" in notes
+
+
+def test_the_overview_confirms_complete_shards() -> None:
+    notes = " ".join(a.text for a in charts.overview_tiles(OVERVIEW, LABEL).layout.annotations)
+    assert "every shard complete against its manifest" in notes
+
+
+def test_details_follow_the_sample_line() -> None:
+    detail = "217,000 positions shown, in bins of at least 200 within ±2,000 cp"
+    scales = pd.DataFrame({"gen": [0, 6], "scale": [380.0, 410.0], "n": [9, 9]})
+    shares = pd.DataFrame({"gen": [0, 6], "share": [0.5, 0.5], "bin": [0, 0]})
+    for figure in (
+        charts.calibration_curves(_table(), LABEL, detail=detail),
+        charts.scale_bars(scales, LABEL, detail=detail),
+        charts.phase_heatmap(_table(by_phase=True), LABEL, detail=detail),
+        charts.score_ridgeline(shares, LABEL, detail=detail),
+    ):
+        title = figure.layout.title.text
+        assert LABEL in title and detail in title and title.index(LABEL) < title.index(detail)
+
+
+def test_one_incomplete_shard_is_singular() -> None:
+    figure = charts.overview_tiles({**OVERVIEW, "short": 1, "missing": 12_500}, LABEL)
+    notes = " ".join(a.text for a in figure.layout.annotations)
+    assert "1 shard short or unreadable" in notes

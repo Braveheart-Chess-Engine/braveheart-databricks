@@ -72,6 +72,61 @@ positions = records.select(
 )
 ```
 
+## Analyses
+
+This repository is also a
+[Databricks asset bundle](https://docs.databricks.com/aws/en/dev-tools/bundles/)
+([`databricks.yml`](databricks.yml)): analysis notebooks and the jobs that run
+them, version-controlled here and deployed by CI.
+
+| What | Where |
+| --- | --- |
+| The self-play calibration report: do scores predict results, generation by generation? | [`notebooks/selfplay_calibration.py`](notebooks/selfplay_calibration.py), job `selfplay-calibration` |
+| Its tested logic: parsing, phase, the scale fit, the charts | [`src/selfplay_analysis/`](src/selfplay_analysis) |
+
+### Running the report
+
+In the workspace, open **Jobs & Pipelines**, then **selfplay-calibration**:
+
+- **Run now** samples 24 shards a generation, about 4 million positions, in a
+  few minutes;
+- **Run now with different parameters** takes `shards_per_generation` (`all`
+  reads every shard, about 3.2 billion positions), `generations` and
+  `label_set` (only `original` for now).
+
+The run's notebook output is the report: interactive charts of calibration, the
+best-fitting scale, where the fit breaks by phase, and each generation's
+results, scores, phases and games. The deployed notebook also runs
+interactively, with the same parameters as widgets.
+
+### Developing
+
+```sh
+uv sync                                          # Python 3.12, PySpark, Plotly, pytest, ruff
+uv run pytest                                    # the Spark tests need a JDK 17 or 21; they skip without one
+uv run ruff check . && uv run ruff format --check .
+```
+
+To try a change in the workspace before merging, deploy a private copy under
+your own login:
+
+```sh
+databricks auth login --host <workspace URL>
+databricks bundle deploy                         # target dev: names prefixed [dev <you>]
+databricks bundle run selfplay_calibration
+```
+
+### How deploys work
+
+A merge to `main` runs **Deploy** ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)):
+it signs in as the project's deployer, a workspace service principal that
+jwall-engineering-infra creates because the project file sets `deployer: true`,
+through GitHub OIDC with no secret, and deploys the bundle's `prod` target.
+Jobs run as the deployer, which reads exactly what the workspace's users may.
+The GitHub environment `prod` (deployable from `main` only) and its variables
+(`DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID`, `DATABRICKS_TOKEN_AUDIENCE`) are
+the owner's.
+
 ## Contributing
 
 Changes go through pull requests with one-line Conventional Commits; see
