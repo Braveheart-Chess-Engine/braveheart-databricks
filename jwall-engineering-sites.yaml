@@ -30,3 +30,8 @@ components:
     reads:
       - dataset: braveheart-selfplay/positions
         purpose: generation-over-generation self-play analysis
+    # A deploy identity for this repository's CI: a workspace service principal
+    # that GitHub Actions in its `prod` environment signs in as, with no secret.
+    # It is a workspace user, so it reads only what the reads above allow. Its
+    # application ID appears in the Databricks apply's output.
+    deployer: true
