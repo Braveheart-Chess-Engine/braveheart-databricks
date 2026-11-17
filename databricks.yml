@@ -32,9 +32,15 @@ targets:
     mode: production
     git:
       branch: main
+    # One fixed folder whoever deploys, so only one copy exists: the deployer's own.
+    workspace:
+      root_path: /Workspace/Users/${var.deployer_application_id}/.bundle/${bundle.name}/${bundle.target}
     run_as:
       service_principal_name: ${var.deployer_application_id}
     permissions:
-      # View and run, never manage: the deployed files stay read-only.
+      # The deployer manages its own deployment; the workspace's users view and
+      # run, never manage, so the deployed files stay read-only.
+      - service_principal_name: ${var.deployer_application_id}
+        level: CAN_MANAGE
       - group_name: braveheart-databricks-workspace-users
         level: CAN_RUN
