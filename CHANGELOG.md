@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/Braveheart-Chess/braveheart-databricks/compare/v0.2.0...v0.3.0) (2026-11-17)
+
+
+### Features
+
+* ask for a deployer so merges to main can deploy the bundle ([#11](https://github.com/Braveheart-Chess/braveheart-databricks/issues/11)) ([db8e9fb](https://github.com/Braveheart-Chess/braveheart-databricks/commit/db8e9fb907bc20dfcb521716764c4abf4bb0fb62))
+* version-controlled analysis as a Databricks bundle, with a selfplay calibration report ([#10](https://github.com/Braveheart-Chess/braveheart-databricks/issues/10)) ([af8621a](https://github.com/Braveheart-Chess/braveheart-databricks/commit/af8621a4fc798769a6282ad0ebc108c5de044fa1))
+
+
+### Bug Fixes
+
+* **bundle:** let the deployer manage its own deployment and pin prod's root path ([#12](https://github.com/Braveheart-Chess/braveheart-databricks/issues/12)) ([f62bb40](https://github.com/Braveheart-Chess/braveheart-databricks/commit/f62bb40877b9c43a4601cb469e112afbb56d5947))
+
+
+### Documentation
+
+* read the positions through their Unity Catalog volume ([#8](https://github.com/Braveheart-Chess/braveheart-databricks/issues/8)) ([2324f6c](https://github.com/Braveheart-Chess/braveheart-databricks/commit/2324f6c6a6544b97340634dc405cdd587e8d57d3))
+
 ## [0.2.0](https://github.com/Braveheart-Chess/braveheart-databricks/compare/v0.1.0...v0.2.0) (2026-11-16)
 
 
