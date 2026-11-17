@@ -46,12 +46,20 @@ def test_deploy_signs_in_as_the_deployer_from_environment_variables() -> None:
     }
 
 
+def test_deploy_masks_the_identifiers_before_anything_prints_them() -> None:
+    # The repository is public and vars are not masked: the CLI would print the
+    # host and the deployer's application ID into the run log.
+    first = DEPLOY_JOB["steps"][0]["run"]
+    for name in ("DATABRICKS_HOST", "DATABRICKS_CLIENT_ID", "DATABRICKS_TOKEN_AUDIENCE"):
+        assert f'echo "::add-mask::${name}"' in first
+    assert 'echo "::add-mask::${DATABRICKS_HOST#https://}"' in first
+
+
 def test_deploy_checks_who_it_is_then_validates_and_deploys_never_running_a_job() -> None:
-    assert _runs(DEPLOY_JOB) == [
-        "databricks current-user me",
-        "databricks bundle validate -t prod",
-        "databricks bundle deploy -t prod",
-    ]
+    runs = _runs(DEPLOY_JOB)[1:]
+    assert runs[0].startswith("databricks current-user me")
+    assert runs[1:] == ["databricks bundle validate -t prod", "databricks bundle deploy -t prod"]
+    assert not any("bundle run" in run for run in _runs(DEPLOY_JOB))
 
 
 def test_the_cli_is_pinned_to_a_release_everywhere() -> None:

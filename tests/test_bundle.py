@@ -25,11 +25,14 @@ def test_the_bundle_and_its_targets() -> None:
     assert prod["git"]["branch"] == "main"
 
 
-def test_prod_runs_as_the_deployer_and_lets_the_workspace_users_view() -> None:
+def test_prod_runs_as_the_deployer_and_lets_the_workspace_users_view_and_run() -> None:
+    # The design: users view and run what the deployer deploys. CAN_RUN, not
+    # CAN_MANAGE: the deployed files stay read-only, so nobody changes what runs
+    # as the deployer.
     prod = BUNDLE["targets"]["prod"]
     assert prod["run_as"] == {"service_principal_name": "${var.deployer_application_id}"}
     assert prod["permissions"] == [
-        {"group_name": "braveheart-databricks-workspace-users", "level": "CAN_VIEW"}
+        {"group_name": "braveheart-databricks-workspace-users", "level": "CAN_RUN"}
     ]
 
 

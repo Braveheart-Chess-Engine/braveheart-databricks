@@ -43,10 +43,18 @@ jobs:
       DATABRICKS_TOKEN_AUDIENCE: ${{ vars.DATABRICKS_TOKEN_AUDIENCE }}
       BUNDLE_VAR_deployer_application_id: ${{ vars.DATABRICKS_CLIENT_ID }}
     steps:
+      # First: the repository is public and vars are not masked, so the CLI
+      # would print the host and the deployer's application ID into the log.
+      - name: Mask the identifiers
+        run: |
+          echo "::add-mask::$DATABRICKS_HOST"
+          echo "::add-mask::${DATABRICKS_HOST#https://}"
+          echo "::add-mask::$DATABRICKS_CLIENT_ID"
+          echo "::add-mask::$DATABRICKS_TOKEN_AUDIENCE"
       - uses: actions/checkout@v7
       - uses: databricks/setup-cli@v1.26.0
       - name: Sign in as the deployer
-        run: databricks current-user me
+        run: databricks current-user me --output json | jq -r '"signed in as " + .displayName'
       - name: Validate the bundle
         run: databricks bundle validate -t prod
       - name: Deploy

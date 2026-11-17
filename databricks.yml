@@ -35,5 +35,6 @@ targets:
     run_as:
       service_principal_name: ${var.deployer_application_id}
     permissions:
+      # View and run, never manage: the deployed files stay read-only.
       - group_name: braveheart-databricks-workspace-users
-        level: CAN_VIEW
+        level: CAN_RUN
