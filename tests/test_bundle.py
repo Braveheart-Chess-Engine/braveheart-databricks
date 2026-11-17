@@ -28,12 +28,22 @@ def test_the_bundle_and_its_targets() -> None:
 def test_prod_runs_as_the_deployer_and_lets_the_workspace_users_view_and_run() -> None:
     # The design: users view and run what the deployer deploys. CAN_RUN, not
     # CAN_MANAGE: the deployed files stay read-only, so nobody changes what runs
-    # as the deployer.
+    # as the deployer. The deployer manages its own deployment (the CLI's advice).
     prod = BUNDLE["targets"]["prod"]
     assert prod["run_as"] == {"service_principal_name": "${var.deployer_application_id}"}
     assert prod["permissions"] == [
-        {"group_name": "braveheart-databricks-workspace-users", "level": "CAN_RUN"}
+        {"service_principal_name": "${var.deployer_application_id}", "level": "CAN_MANAGE"},
+        {"group_name": "braveheart-databricks-workspace-users", "level": "CAN_RUN"},
     ]
+
+
+def test_prod_deploys_to_one_fixed_folder_whoever_deploys() -> None:
+    # Production mode wants a fixed root path, so only one copy exists; the deployer's
+    # own folder, named by the variable, so no identifier is committed.
+    assert BUNDLE["targets"]["prod"]["workspace"] == {
+        "root_path": "/Workspace/Users/${var.deployer_application_id}"
+        "/.bundle/${bundle.name}/${bundle.target}"
+    }
 
 
 def test_no_identifier_is_committed() -> None:
