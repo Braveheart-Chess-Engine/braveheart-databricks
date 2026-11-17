@@ -3,7 +3,7 @@ name: Deploy
 # A merge to main deploys the bundle (databricks.yml, target prod) to
 # braveheart-databricks-prod, signed in as the project's deployer through GitHub
 # OIDC: Databricks trusts GitHub's token for this repository's `prod`
-# environment only (jwall-engineering-infra's databricks-workspace deployer), so
+# environment only (jaws's databricks-workspace deployer), so
 # no secret exists anywhere. Deploying never runs a job; runs are started by
 # hand in the workspace.
 #

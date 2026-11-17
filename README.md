@@ -14,21 +14,21 @@ data with Unity Catalog, central compute policies, audit logs and tags on every
 resource.
 
 The workspace is provisioned by
-[jwall-engineering-infra](https://github.com/jwallace145/jwall-engineering-infra)
-from [`jwall-engineering-sites.yaml`](jwall-engineering-sites.yaml). This
+[jaws](https://github.com/jwallace145/jaws)
+from [`jaws.yaml`](jaws.yaml). This
 repository only says what the project asks for: its compute policies, its
 workspace users, the datasets it reads and a deploy identity for its CI
 (`deployer: true`: a service principal GitHub Actions signs in as, with no
 secret, to deploy this repository's analyses). The network, cost center, admins
 and guardrails are central.
-See [docs/databricks.md](https://github.com/jwallace145/jwall-engineering-infra/blob/main/docs/databricks.md).
+See [docs/databricks.md](https://github.com/jwallace145/jaws/blob/main/docs/databricks.md).
 
 ## Datasets it reads
 
 The workspace reads Braveheart's self-play positions, **read-only**. Access is a
 handshake on a dataset the platform has onboarded, and needs all three:
 
-- jwall-engineering-infra onboards the dataset
+- jaws onboards the dataset
   (`datasets/braveheart-selfplay/positions.yaml`): in Unity Catalog it is the
   schema `positions` in braveheart-selfplay's catalog, `braveheart_selfplay`,
   holding one external volume, `files`;
@@ -43,7 +43,7 @@ bound read-only, next to `braveheart_databricks`. Nothing here can write to the
 data: the workspace users group holds `USE_CATALOG`, `USE_SCHEMA` and
 `READ_VOLUME` only, and the volume's storage is read-only. Other workspaces
 see only what is shared with them
-([how it works](https://github.com/jwallace145/jwall-engineering-infra/blob/main/docs/databricks.md#datasets-and-access)).
+([how it works](https://github.com/jwallace145/jaws/blob/main/docs/databricks.md#datasets-and-access)).
 
 ### Reading the positions
 
@@ -120,7 +120,7 @@ databricks bundle run selfplay_calibration
 
 A merge to `main` runs **Deploy** ([`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)):
 it signs in as the project's deployer, a workspace service principal that
-jwall-engineering-infra creates because the project file sets `deployer: true`,
+jaws creates because the project file sets `deployer: true`,
 through GitHub OIDC with no secret, and deploys the bundle's `prod` target.
 Jobs run as the deployer, which reads exactly what the workspace's users may.
 The GitHub environment `prod` (deployable from `main` only) and its variables
