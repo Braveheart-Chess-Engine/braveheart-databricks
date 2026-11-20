@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/Braveheart-Chess/braveheart-databricks/compare/v0.4.0...v0.4.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* stop a job run that outlasts its time limit ([#16](https://github.com/Braveheart-Chess/braveheart-databricks/issues/16)) ([e72bd82](https://github.com/Braveheart-Chess/braveheart-databricks/commit/e72bd821eba1c3065dcb610b312d6fccb9301bfb))
+
 ## [0.4.0](https://github.com/Braveheart-Chess/braveheart-databricks/compare/v0.3.0...v0.4.0) (2026-11-20)
 
 
