@@ -82,7 +82,8 @@ them, version-controlled here and deployed by CI.
 | What | Where |
 | --- | --- |
 | The self-play calibration report: do scores predict results, generation by generation? | [`notebooks/selfplay_calibration.py`](notebooks/selfplay_calibration.py), job `selfplay-calibration` |
-| Its tested logic: parsing, phase, the scale fit, the charts | [`src/selfplay_analysis/`](src/selfplay_analysis) |
+| The NNUE structural analysis: is the net's raw evaluation wrong by pawn structure by enough to justify new inputs? GO, NO-GO or INCONCLUSIVE, by a rule registered before any result | [`notebooks/nnue_structural_analysis.py`](notebooks/nnue_structural_analysis.py), job `nnue-structural-analysis`, [the research note](docs/nnue-structural-research.md) |
+| Their tested logic: parsing, phase, the scale fit, pawn structure, the net's evaluation in NumPy, the models, the rule, the charts | [`src/selfplay_analysis/`](src/selfplay_analysis) |
 
 ### Running the report
 
@@ -99,11 +100,26 @@ best-fitting scale, where the fit breaks by phase, and each generation's
 results, scores, phases and games. The deployed notebook also runs
 interactively, with the same parameters as widgets.
 
+### Running the structural analysis
+
+**nnue-structural-analysis** runs the same way. **Run now** samples 1,200 shards a
+generation of generations 5 and 6 (about 60 million positions a pass, 8.2 million of
+them in the models), evaluates each position with the engine's current net and
+measures, per pawn-structure feature and phase, how far the evaluation is from the
+results. Its last chart is the verdict. What the rule is, why the sample is that
+size, what each parameter does and what the report cannot say are in
+[the research note](docs/nnue-structural-research.md).
+
+The report downloads the net file from the engine's public repository and checks its
+SHA-256. If the workspace cannot reach it, upload the file and give its path as
+`net_path`.
+
 ### Developing
 
 ```sh
 uv sync                                          # Python 3.12, PySpark, Plotly, pytest, ruff
 uv run pytest                                    # the Spark tests need a JDK 17 or 21; they skip without one
+                                                 # the NNUE port's test needs the net: tests/fixtures/<net id>.nnue or BRAVEHEART_NET
 uv run ruff check . && uv run ruff format --check .
 ```
 

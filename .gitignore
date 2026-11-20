@@ -12,3 +12,6 @@ __pycache__/
 
 # Databricks bundle state
 .databricks/
+
+# The net file the NNUE tests read (CI downloads it; see tests/test_nnue.py)
+tests/fixtures/*.nnue
