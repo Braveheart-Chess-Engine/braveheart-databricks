@@ -251,3 +251,16 @@ def duplicate_share(rows: pd.DataFrame) -> float:
     how much the folds overlap in exact positions, though never in games."""
     folds = rows.groupby("position_hash")["fold"].transform("nunique")
     return float((folds > 1).mean())
+
+
+def difference_shares(summary: pd.DataFrame) -> pd.DataFrame:
+    """Per generation, phase and structure feature, the positions counted and the share of
+    them where the sides differ in the feature, from the summary's `feature` rows
+    (structural_frames.summary): how often each feature has anything to say."""
+    rows = summary[summary["kind"] == "feature"]
+    keys = ["gen", "phase", "feature"]
+    positions = rows.groupby(keys, observed=True)["n"].sum()
+    differing = rows[rows["value"] != 0].groupby(keys, observed=True)["n"].sum()
+    out = positions.rename("positions").to_frame()
+    out["share"] = (differing.reindex(out.index).fillna(0) / out["positions"]).astype(float)
+    return out.reset_index().astype({"gen": int, "positions": int})
