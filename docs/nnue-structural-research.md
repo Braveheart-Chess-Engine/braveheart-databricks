@@ -130,6 +130,39 @@ engine's inference
 evaluates a set of positions the engine itself evaluated and stops unless every one
 matches exactly.
 
+The golden positions
+([`net8x160-golden.tsv`](../src/selfplay_analysis/data/net8x160-golden.tsv)) are 480
+positions from the 24 shards read in full, drawn with seed 0: 30 for each of the
+eight output buckets and each side to move, with both kings on either half of the
+board. The engine evaluated them through this program, built against its `v0.54.0`
+crates:
+
+```rust
+use std::io::{self, BufRead, Write};
+
+use braveheart_core::position::Position;
+use braveheart_core::types::Color;
+use braveheart_search::board::Board;
+use braveheart_search::nnue::default_network;
+
+fn main() {
+    let net = default_network();
+    let mut out = io::stdout().lock();
+    for line in io::stdin().lock().lines() {
+        let fen = line.expect("a line");
+        let pos = Position::from_fen(&fen).expect("a FEN");
+        let white_to_move = pos.side_to_move() == Color::White;
+        let mut board = Board::from_position(pos);
+        board.set_network(Some(net.clone()));
+        let eval = board.evaluate();
+        writeln!(out, "{fen}\t{}", if white_to_move { eval } else { -eval }).expect("stdout");
+    }
+}
+```
+
+Run once over every position of those 24 shards, the port and the engine agreed on
+all 601,283.
+
 **Model.** Per generation, a logistic model of the game's result (a draw counts half,
 so the log loss is the cross-entropy against 0, ½ or 1):
 

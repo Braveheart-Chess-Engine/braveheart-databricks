@@ -89,6 +89,16 @@ def test_ci_runs_the_spark_tests_for_real() -> None:
     assert "uv run pytest" in _runs(job)
 
 
+def test_ci_runs_the_net_tests_for_real() -> None:
+    # The port of the engine's evaluation is checked against the engine's public net
+    # file: CI fetches it before the tests, which fail there rather than skip.
+    job = CI["jobs"]["python"]
+    assert job["env"]["NET_TESTS"] == "required"
+    runs = _runs(job)
+    fetch = next(i for i, run in enumerate(runs) if "nnue.download_net()" in run)
+    assert fetch < runs.index("uv run pytest")
+
+
 def test_ci_checks_the_bundle_against_the_clis_schema_offline() -> None:
     runs = "\n".join(_runs(CI["jobs"]["bundle-schema"]))
     assert "databricks bundle schema" in runs and "check-jsonschema" in runs

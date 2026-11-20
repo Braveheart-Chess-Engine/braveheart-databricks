@@ -75,6 +75,8 @@ jobs:
     env:
       # The Spark tests fail here rather than skip: CI is where they always run.
       SPARK_TESTS: required
+      # So do the tests that hold the NNUE port to the engine's net file.
+      NET_TESTS: required
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -89,6 +91,14 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run ruff format --check .
+      # The engine's public net file, checked by its SHA-256 (nnue.py names both).
+      - name: Fetch the net the NNUE tests read
+        run: >-
+          PYTHONPATH=src uv run python -c
+          "from pathlib import Path; from selfplay_analysis import nnue;
+          path = Path('tests/fixtures') / f'{nnue.NET_ID}.nnue';
+          path.parent.mkdir(parents=True, exist_ok=True);
+          path.write_bytes(nnue.download_net())"
       - run: uv run pytest
 
   bundle-schema:
