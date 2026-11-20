@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/Braveheart-Chess/braveheart-databricks/compare/v0.3.0...v0.4.0) (2026-11-20)
+
+
+### Features
+
+* decide by a registered rule whether the net misjudges pawn structure ([#14](https://github.com/Braveheart-Chess/braveheart-databricks/issues/14)) ([8f996fa](https://github.com/Braveheart-Chess/braveheart-databricks/commit/8f996fad12701fb93a43875946a53841bedb72ea))
+
 ## [0.3.0](https://github.com/Braveheart-Chess/braveheart-databricks/compare/v0.2.0...v0.3.0) (2026-11-17)
 
 
