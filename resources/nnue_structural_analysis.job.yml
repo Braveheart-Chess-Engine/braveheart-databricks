@@ -6,7 +6,7 @@ resources:
         Whether the current net's raw evaluation is wrong by pawn structure by enough to
         justify a pawn-pair input experiment, decided by a rule registered before any result
         (docs/nnue-structural-research.md): GO, NO-GO or INCONCLUSIVE, with interactive
-        charts. Started by hand; samples 672 shards a generation of generations 5 and 6
+        charts. Started by hand; samples 1,200 shards a generation of generations 5 and 6
         unless told otherwise.
       # No cluster: a notebook task without one runs on serverless compute.
       tasks:
@@ -17,13 +17,13 @@ resources:
         - name: generations
           default: "5,6"
         - name: shards_per_generation
-          default: "672"
+          default: "1200"
         - name: sampling_seed
           default: "0"
         - name: min_effect_cp
           default: "15"
         - name: max_positions_per_game
-          default: "24"
+          default: "12"
         - name: exclude_draw_adjudicated
           default: "false"
         - name: net_path

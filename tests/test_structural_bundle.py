@@ -33,10 +33,10 @@ def test_the_job_runs_the_notebook_on_serverless_and_only_by_hand() -> None:
 def test_the_job_parameters_and_their_defaults() -> None:
     assert DEFAULTS == {
         "generations": "5,6",
-        "shards_per_generation": "672",
+        "shards_per_generation": "1200",
         "sampling_seed": "0",
         "min_effect_cp": "15",
-        "max_positions_per_game": "24",
+        "max_positions_per_game": "12",
         "exclude_draw_adjudicated": "false",
         "net_path": "",
     }
@@ -46,6 +46,7 @@ def test_the_defaults_are_the_registered_values() -> None:
     assert float(DEFAULTS["min_effect_cp"]) == registered.MIN_EFFECT_CP
     assert int(DEFAULTS["shards_per_generation"]) == registered.SHARDS_PER_GENERATION
     assert int(DEFAULTS["max_positions_per_game"]) == registered.MAX_POSITIONS_PER_GAME
+    assert tuple(int(g) for g in DEFAULTS["generations"].split(",")) == registered.GENERATIONS
 
 
 def test_the_notebook_takes_the_job_parameters_with_the_same_defaults() -> None:
@@ -83,4 +84,18 @@ def test_the_verdict_is_computed_never_typed() -> None:
 
 def test_every_generation_is_analysed_on_its_own_with_the_registered_rule() -> None:
     assert "decide(effects_by_generation, shuffled_by_generation, min_effect_cp)" in NOTEBOOK
-    assert "registered.MIN_SHARE" in NOTEBOOK and "registered.POWER_FLOOR" in NOTEBOOK
+    assert "registered.MIN_SHARE" in NOTEBOOK
+
+
+def test_findings_are_stated_only_when_the_rule_reaches_them() -> None:
+    # The cells that met the size condition are named on GO alone, and a run that decides
+    # nothing says so on the charts and tables that would otherwise read as findings.
+    assert 'if verdict.outcome == "GO":' in NOTEBOOK
+    assert NOTEBOOK.count("caveat=caveat") == 2  # both forests
+    assert "interpretable=" in NOTEBOOK  # the tables
+
+
+def test_a_run_with_other_parameters_is_not_called_the_registered_result() -> None:
+    for name in ("MIN_EFFECT_CP", "MAX_POSITIONS_PER_GAME", "GENERATIONS"):
+        assert f"registered.{name}" in NOTEBOOK
+    assert "as_registered=as_registered" in NOTEBOOK

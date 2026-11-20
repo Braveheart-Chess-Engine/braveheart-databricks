@@ -225,3 +225,19 @@ def test_model_rows_over_the_cap_are_whole_games_and_the_same_every_time(spark, 
     assert sorted(first["position_hash"]) == sorted(again["position_hash"])
     sampled = first.groupby("game_id").size()
     assert (sampled == sizes.loc[sampled.index]).all()
+    # A game's id is its shard's place in the dataset and its number, not where the volume
+    # is mounted, so which games are kept is the same everywhere: here, some and not all.
+    assert len(sampled) == 2 and len(sizes) == 3
+
+
+def test_a_games_id_does_not_depend_on_where_the_volume_is(spark, tmp_path: Path) -> None:
+    from selfplay_analysis.structural_frames import model_rows, read_shards
+
+    ids = []
+    for mount in ("a", "b/c"):
+        root = tmp_path / mount
+        path = _write(root, 6, "positions", "t0-w003-s00000.txt.gz", "\n".join(LOSS_RECORDS) + "\n")
+        _write(root, 6, "games", "t0-w003-s00000.jsonl.gz", LOSS + "\n")
+        rows, _ = model_rows(read_shards(spark, [path], net_bytes=None), kept=2)
+        ids.append(sorted(rows["game_id"]))
+    assert ids[0] == ids[1] and len(set(ids[0])) == 1

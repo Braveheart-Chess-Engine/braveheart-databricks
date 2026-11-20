@@ -205,17 +205,19 @@ def model_rows(
     table: DataFrame, kept: int, max_rows: int = MAX_MODEL_ROWS
 ) -> tuple[pd.DataFrame, float]:
     """The rows the models are fitted on, and the share of games they hold: the records of
-    aligned shards that survive thinning, with `game_id` (a hash of the file and the game)
+    aligned shards that survive thinning, with `game_id` (a hash of the shard's place in
+    the dataset and the game's number in it, the same wherever the volume is mounted)
     and each structure feature and the pawn count as white's minus black's (`<feature>_d`,
     `pawns_d`). `kept` is how many such rows there are (the summary's count): beyond
-    `max_rows`, whole games are sampled by their `game_id`, the same ones every time.
+    `max_rows`, whole games are sampled by their `game_id`, the same ones every time; the
+    share returned is the one aimed at, and the games kept are close to it at scale.
     The table is millions of rows on the driver, so it is compact: the phase and the
     ending are categories and the differences single bytes."""
     share = 1.0 if kept <= max_rows else max_rows / kept
     rows = table.where(F.col("ok") & F.col("aligned") & F.col("kept")).select(
         F.col("gen").cast("short").alias("gen"),
         "fold",
-        F.xxhash64("file", "game").alias("game_id"),
+        F.xxhash64(_key(F.col("file")), "game").alias("game_id"),
         "ply",
         "stm",
         "score_white",

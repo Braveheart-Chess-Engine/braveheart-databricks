@@ -1,5 +1,3 @@
-import math
-
 import numpy as np
 import pandas as pd
 
@@ -29,22 +27,19 @@ def table(cp: float, se: float, share: float = 0.3) -> pd.DataFrame:
     rows = []
     for feature in STRUCTURE:
         for phase in PHASES:
-            power = 0.5 * (1 + math.erf((15.0 / se - 1.96) / math.sqrt(2)))
-            rows.append((feature, phase, cp, se, cp - 1.96 * se, cp + 1.96 * se, share, power))
-    return pd.DataFrame(
-        rows, columns=["feature", "phase", "cp", "se", "lo", "hi", "share", "power"]
-    )
+            rows.append((feature, phase, cp, se, cp - 1.96 * se, cp + 1.96 * se, share))
+    return pd.DataFrame(rows, columns=["feature", "phase", "cp", "se", "lo", "hi", "share"])
 
 
 def _effects() -> dict[int, pd.DataFrame]:
-    """Every cell at 20 and 18 cp, but passed pawns in the opening: rare, and weakly
-    measured."""
-    out = {5: table(20, 4), 6: table(18, 4)}
+    """Every cell at 3 and -2 cp, tightly measured, but two: passed pawns in the opening
+    (rare) and doubled pawns in the endgame (measured too loosely to rule anything out)."""
+    out = {5: table(3, 4), 6: table(-2, 4)}
     for frame in out.values():
         rare = (frame["feature"] == "passed") & (frame["phase"] == "opening")
         frame.loc[rare, "share"] = 0.01
         weak = (frame["feature"] == "doubled") & (frame["phase"] == "endgame")
-        frame.loc[weak, ["se", "power"]] = [12.0, 0.24]
+        frame.loc[weak, ["se", "lo", "hi"]] = [12.0, -21.0, 26.0]
     return out
 
 
@@ -78,7 +73,7 @@ def _figures() -> list:
         charts.structure_shares(difference_shares(SUMMARY), 0.05, LABEL),
         charts.effect_forest(_effects(), VERDICT.cells, 15.0, LABEL),
         charts.gain_intervals(GAINS, LABEL),
-        charts.power_grid(VERDICT, 0.8, LABEL),
+        charts.bound_grid(VERDICT, 15.0, LABEL),
         charts.verdict_banner(VERDICT, 15.0, LABEL),
     ]
 
@@ -141,7 +136,7 @@ def test_effects_that_are_missing_draw_without_error() -> None:
     verdict = decide({5: missing, 6: missing}, QUIET)
     for figure in (
         charts.effect_forest({5: missing, 6: missing}, verdict.cells, 15.0, LABEL),
-        charts.power_grid(verdict, 0.8, LABEL),
+        charts.bound_grid(verdict, 15.0, LABEL),
         charts.verdict_banner(verdict, 15.0, LABEL),
     ):
         assert LABEL in figure.layout.title.text
@@ -157,8 +152,8 @@ def test_the_gain_names_its_two_series_and_carries_their_intervals() -> None:
     assert len({t.marker.symbol for t in figure.data}) == 2
 
 
-def test_the_power_grid_labels_each_cell_and_flags_the_weak_and_the_rare() -> None:
-    figure = charts.power_grid(VERDICT, 0.8, LABEL)
+def test_the_bound_grid_labels_each_cell_and_flags_the_loose_and_the_rare() -> None:
+    figure = charts.bound_grid(VERDICT, 15.0, LABEL)
     (heat,) = figure.data
     assert np.array(heat.z, dtype=float).shape == (len(STRUCTURE), len(PHASES))
     text = {
@@ -167,21 +162,38 @@ def test_the_power_grid_labels_each_cell_and_flags_the_weak_and_the_rare() -> No
         for j, phase in enumerate(PHASES)
     }
     assert text[("passed", "opening")] == "–"  # not eligible
-    assert text[("doubled", "endgame")].endswith("✗")  # under the floor
-    assert text[("isolated", "opening")] == "93%"
+    assert text[("doubled", "endgame")] == "±26.0 ✗"  # reaches past the threshold
+    assert text[("isolated", "opening")] == "±10.8"  # 3 + 7.84 in generation 5
+
+
+def test_the_forest_can_say_that_the_run_decides_nothing() -> None:
+    plain = charts.effect_forest(_effects(), VERDICT.cells, 15.0, LABEL)
+    marked = charts.effect_forest(
+        _effects(), VERDICT.cells, 15.0, LABEL, caveat="the run decides nothing"
+    )
+    assert "the run decides nothing" not in plain.layout.title.text
+    assert "⚠ the run decides nothing" in marked.layout.title.text
 
 
 def test_the_banner_states_the_outcome_and_each_condition() -> None:
     figure = charts.verdict_banner(VERDICT, 15.0, LABEL)
     text = " ".join(a.text for a in figure.layout.annotations)
-    assert "INCONCLUSIVE" in text  # one eligible cell is under the power floor
-    for condition in ("replication", "size", "control", "power"):
+    assert "INCONCLUSIVE" in text  # one eligible cell is not bounded, and none meets the size
+    for condition in ("replication", "size", "control", "bounded"):
         assert condition in text
-    assert text.count("✓") == 3 and text.count("✗") == 1
-    go_text = " ".join(
-        a.text
-        for a in charts.verdict_banner(
-            decide({5: table(20, 4), 6: table(18, 4)}, QUIET), 15.0, LABEL
-        ).layout.annotations
+    assert text.count("✓") == 2 and text.count("✗") == 2
+    assert "registered rule" in figure.layout.title.text
+    found = decide({5: table(20, 4), 6: table(18, 4)}, QUIET)
+    go_text = " ".join(a.text for a in charts.verdict_banner(found, 15.0, LABEL).layout.annotations)
+    assert "GO" in go_text and "NO-GO needs" in go_text and go_text.count("✓") == 3
+    ruled_out = decide({5: table(3, 4), 6: table(-2, 4)}, QUIET)
+    no_go = " ".join(
+        a.text for a in charts.verdict_banner(ruled_out, 15.0, LABEL).layout.annotations
     )
-    assert "GO" in go_text and "NO-GO" not in go_text and go_text.count("✓") == 4
+    assert "<b>NO-GO</b>" in no_go
+
+
+def test_the_banner_of_a_run_with_other_parameters_does_not_claim_the_registered_result() -> None:
+    figure = charts.verdict_banner(VERDICT, 10.0, LABEL, as_registered=False)
+    assert "registered rule" not in figure.layout.title.text
+    assert "not the registered" in figure.layout.title.text

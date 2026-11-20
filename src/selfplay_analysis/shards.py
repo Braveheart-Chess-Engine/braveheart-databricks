@@ -94,6 +94,28 @@ def _material(board: str) -> tuple[int, int]:
     return white, black
 
 
+def _is_position(board: str) -> bool:
+    """Whether a FEN's board field is a chess position the net can evaluate: eight ranks
+    of eight squares, pieces only, one king a side and no more than 32 pieces."""
+    ranks = board.split("/")
+    if len(ranks) != 8 or board.count("K") != 1 or board.count("k") != 1:
+        return False
+    pieces = 0
+    for rank in ranks:
+        squares = 0
+        for char in rank:
+            if char in "12345678":
+                squares += int(char)
+            elif char in "pnbrqkPNBRQK":
+                squares += 1
+                pieces += 1
+            else:
+                return False
+        if squares != 8:
+            return False
+    return pieces <= 32
+
+
 def _position_hash(board: str, stm: str) -> int:
     digest = hashlib.sha256(f"{board} {stm}".encode()).digest()
     return int.from_bytes(digest[:8], "big", signed=True)
@@ -101,11 +123,11 @@ def _position_hash(board: str, stm: str) -> int:
 
 def _record(line: str) -> dict | None:
     """A line's record and everything read from its FEN alone, or None when the line is
-    not a record with a whole FEN."""
+    not a record with a whole FEN of a position."""
     try:
         record = parse_record(line)
         board, stm = record.fen.split(" ")[:2]
-        if stm not in ("w", "b"):
+        if stm not in ("w", "b") or not _is_position(board):
             return None
         white, black = structure(record.fen)
         white_npm, black_npm = _material(board)
@@ -151,7 +173,8 @@ def shard_rows(
             [row["result"] for row in records],
             shard_games,
         )
-    except (ValueError, KeyError, TypeError, IndexError):
+    except (ValueError, KeyError, TypeError, IndexError, AttributeError):
+        # Not JSON, not the games file's shape, or not this shard's games.
         assigned = None
     evals = evaluate(net, [row["fen"] for row in records]).tolist() if net is not None else None
     kept = (

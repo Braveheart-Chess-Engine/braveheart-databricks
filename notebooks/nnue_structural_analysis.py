@@ -15,12 +15,13 @@
 # MAGIC **GO** (a pawn-pair net comparison is worth its cost), **NO-GO** (the data could have
 # MAGIC shown an effect of the size that matters, and did not) or **INCONCLUSIVE**. An effect
 # MAGIC is in centipawns of evaluation per unit of a feature's white-minus-black difference,
-# MAGIC in one phase; the rule asks for one of at least `min_effect_cp` that both generations
-# MAGIC agree on, for shuffled features to show none, and for the sample to be large enough
-# MAGIC to have seen one.
+# MAGIC in one phase. An effect of at least `min_effect_cp` that both generations agree on,
+# MAGIC and that shuffled features do not show, is the evidence for one. Every interval
+# MAGIC inside `min_effect_cp` in both generations is the evidence against. Anything
+# MAGIC between decides nothing.
 # MAGIC
 # MAGIC **Parameters** (the widgets above, or the job's): `generations`, each analysed on its
-# MAGIC own; `shards_per_generation`, 672 by default (about 33.6 million positions a pass);
+# MAGIC own; `shards_per_generation`, 1,200 by default (about 60 million positions a pass);
 # MAGIC `sampling_seed`; `min_effect_cp`, registered at 15 and not to be changed after a run;
 # MAGIC `max_positions_per_game`; `exclude_draw_adjudicated`, the sensitivity run; `net_path`,
 # MAGIC a copy of the net file in the workspace (empty downloads it from the engine's
@@ -58,10 +59,10 @@ from selfplay_analysis.verdict import decide
 VOLUME = "/Volumes/braveheart_selfplay/positions/files/selfplay/v1"
 
 dbutils.widgets.text("generations", "5,6", "Generations")
-dbutils.widgets.text("shards_per_generation", "672", "Shards per generation, or all")
+dbutils.widgets.text("shards_per_generation", "1200", "Shards per generation, or all")
 dbutils.widgets.text("sampling_seed", "0", "Sampling seed")
 dbutils.widgets.text("min_effect_cp", "15", "Smallest effect that matters (cp)")
-dbutils.widgets.text("max_positions_per_game", "24", "Positions kept per game")
+dbutils.widgets.text("max_positions_per_game", "12", "Positions kept per game")
 dbutils.widgets.text("exclude_draw_adjudicated", "false", "Leave out draw-adjudicated games")
 dbutils.widgets.text("net_path", "", "Net file in the workspace (empty: download)")
 
@@ -73,6 +74,14 @@ min_effect_cp = float(dbutils.widgets.get("min_effect_cp"))
 cap = int(dbutils.widgets.get("max_positions_per_game"))
 exclude_draws = dbutils.widgets.get("exclude_draw_adjudicated").strip().lower() == "true"
 net_path = dbutils.widgets.get("net_path").strip()
+# The registered question: these generations, this threshold, this thinning, every game. A
+# run with anything else is a sensitivity run, and its verdict is not the registered result.
+as_registered = (
+    tuple(generations) == registered.GENERATIONS
+    and min_effect_cp == registered.MIN_EFFECT_CP
+    and cap == registered.MAX_POSITIONS_PER_GAME
+    and not exclude_draws
+)
 
 # COMMAND ----------
 
@@ -126,7 +135,10 @@ if exclude_draws:
 games_label = f"{scope}, {games_read:,} games"
 print(f"shards against their manifests: {complete}")
 if games_share < 1.0:
-    print(f"the model holds {games_share:.1%} of the games: the sample is over its row limit")
+    print(
+        f"the model holds {rows['game_id'].nunique():,} of {games_read:,} games: the sample "
+        "is over its row limit"
+    )
 
 # COMMAND ----------
 
@@ -185,8 +197,8 @@ for gen in generations:
         part = part[part["termination"] != "draw-adjudication"]
     part = part.reset_index(drop=True)
     mixed = shuffle_structure(part, seed=sampling_seed)
-    effects_by_generation[gen] = effects(part, min_effect_cp)
-    shuffled_by_generation[gen] = effects(mixed, min_effect_cp)
+    effects_by_generation[gen] = effects(part)
+    shuffled_by_generation[gen] = effects(mixed)
     # The baseline has no structure term, so it predicts the shuffled rows as it does the real.
     base = cross_fitted(part, structure=False)
     gains[gen] = {
@@ -199,20 +211,27 @@ for gen in generations:
         f"{duplicates[gen]:.2%} of positions also appear in another fold"
     )
 verdict = decide(effects_by_generation, shuffled_by_generation, min_effect_cp)
+# A run that decides nothing says so wherever its numbers could be read as findings.
+caveat = (
+    "this run decides nothing: no effect is to be read from this chart"
+    if verdict.outcome == "INCONCLUSIVE"
+    else None
+)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Could the report have seen an effect?
+# MAGIC ## How tightly is each cell measured?
 # MAGIC
-# MAGIC Before the effects: the chance each eligible cell would have been detected in every
-# MAGIC generation at once, were its effect exactly the smallest that matters. If any is
-# MAGIC under 80%, the run decides nothing, whatever the effects below look like: raise
+# MAGIC Before the effects: the end of each eligible cell's 95% interval furthest from zero,
+# MAGIC in either generation. An effect of the size that matters is ruled out only when
+# MAGIC every one is inside the threshold. A cell that reaches past it without meeting the
+# MAGIC size condition is where the sample is too small to say: raise
 # MAGIC `shards_per_generation`.
 
 # COMMAND ----------
 
-structural_charts.power_grid(verdict, registered.POWER_FLOOR, sample_label).show()
+structural_charts.bound_grid(verdict, min_effect_cp, sample_label).show()
 
 # COMMAND ----------
 
@@ -226,7 +245,7 @@ structural_charts.power_grid(verdict, registered.POWER_FLOOR, sample_label).show
 # COMMAND ----------
 
 structural_charts.effect_forest(
-    effects_by_generation, verdict.cells, min_effect_cp, sample_label
+    effects_by_generation, verdict.cells, min_effect_cp, sample_label, caveat=caveat
 ).show()
 structural_charts.effect_forest(
     shuffled_by_generation,
@@ -234,6 +253,7 @@ structural_charts.effect_forest(
     min_effect_cp,
     sample_label,
     title="The control: the same analysis on shuffled features",
+    caveat=caveat,
 ).show()
 
 # COMMAND ----------
@@ -257,24 +277,34 @@ structural_charts.gain_intervals(gains, sample_label).show()
 
 # COMMAND ----------
 
-structural_charts.verdict_banner(verdict, min_effect_cp, sample_label).show()
+structural_charts.verdict_banner(
+    verdict, min_effect_cp, sample_label, as_registered=as_registered
+).show()
 
 # COMMAND ----------
 
-# What the run supports, said from the verdict and never typed by hand.
-met = verdict.cells[verdict.cells["meets_size"]]
-weak = verdict.cells[
-    verdict.cells["eligible"] & (verdict.cells["joint_power"] < registered.POWER_FLOOR)
-]
-print(f"outcome: {verdict.outcome}")
+
+# What the run supports, said from the verdict and never typed by hand. The cells that met
+# the size condition are named on GO alone: named otherwise, they would read as findings.
+def _named(cells) -> str:
+    return ", ".join(f"{f} ({p})" for f, p in zip(cells["feature"], cells["phase"], strict=True))
+
+
+eligible = verdict.cells[verdict.cells["eligible"]]
+print(f"outcome: {verdict.outcome}" + ("" if as_registered else " (not the registered result)"))
 for name, holds in verdict.conditions.items():
     print(f"  {'holds' if holds else 'fails'}: {name}")
-if len(met):
-    cells = ", ".join(f"{f} ({p})" for f, p in zip(met["feature"], met["phase"], strict=True))
-    print(f"cells with an effect of {min_effect_cp:g} cp or more in every generation: {cells}")
-if len(weak):
-    cells = ", ".join(f"{f} ({p})" for f, p in zip(weak["feature"], weak["phase"], strict=True))
-    print(f"eligible cells the sample could not have detected: {cells}")
+if verdict.outcome == "GO":
+    met = _named(verdict.cells[verdict.cells["meets_size"]])
+    print(f"cells with an effect of {min_effect_cp:g} cp or more in every generation: {met}")
+elif verdict.outcome == "NO-GO":
+    print(
+        f"every eligible cell's effect is inside ±{eligible['bound'].max():.1f} cp in every "
+        f"generation, under the {min_effect_cp:g} cp that matters"
+    )
+else:
+    loose = _named(eligible[~eligible["bounded"]])
+    print(f"nothing is read from this run. Eligible cells not yet measured tightly enough: {loose}")
 print(
     "This compares the evaluation with game results, which is not the evaluation's error; "
     "the games were played by older nets; and only an SPRT of a net with new inputs says "
@@ -290,5 +320,5 @@ print(
 
 for gen in generations:
     numbers = effects_by_generation[gen].merge(verdict.cells, on=["feature", "phase"])
-    display(numbers.assign(generation=gen).round(3))
+    display(numbers.assign(generation=gen, interpretable=caveat is None).round(3))
 display(shares.round(4))

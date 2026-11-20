@@ -9,11 +9,13 @@ conditions:
 - `size`: some eligible cell has an effect of at least MIN_EFFECT_CP, with the same sign in
   every generation, each generation's 95% interval excluding zero.
 - `control`: on the shuffled features, no cell meets the size condition.
-- `power`: every eligible cell would be detected in every generation at once with at least
-  POWER_FLOOR, were its effect exactly MIN_EFFECT_CP (and there is an eligible cell).
+- `bounded`: every eligible cell's 95% interval lies inside plus or minus MIN_EFFECT_CP in
+  every generation (and there is an eligible cell): an effect of the size that matters is
+  ruled out everywhere it could be.
 
-GO is all four. NO-GO is replication, control and power without size: the data could have
-shown an effect of the size that matters and did not. Anything else is INCONCLUSIVE.
+GO is replication, size and control. NO-GO is replication, control and bounded. Anything
+else is INCONCLUSIVE: an estimate that reaches the threshold in one generation only, or an
+interval too wide to say, decides nothing either way.
 """
 
 from __future__ import annotations
@@ -23,16 +25,17 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from .registered import MIN_EFFECT_CP, MIN_SHARE, POWER_FLOOR
+from .registered import MIN_EFFECT_CP, MIN_SHARE
 
 _KEY = ["feature", "phase"]
 
 
 @dataclass(frozen=True)
 class Verdict:
-    """The outcome, the conditions behind it, and per cell: whether it is `eligible`, its
-    `joint_power` (the product of the generations' powers), whether its effect has the
-    `same_sign` in every generation, and whether it `meets_size`."""
+    """The outcome, the conditions behind it, and per cell: whether it is `eligible`,
+    whether its effect has the `same_sign` in every generation, whether it `meets_size`,
+    its `bound` (the interval end furthest from zero in any generation) and whether it is
+    `bounded` (that bound is inside the threshold)."""
 
     outcome: str
     conditions: dict[str, bool]
@@ -43,28 +46,28 @@ def _cells(
     effects: Mapping[int, pd.DataFrame], min_effect_cp: float, min_share: float
 ) -> pd.DataFrame:
     """The rule's reading of each cell across the generations' effects tables."""
-    tables = [table.set_index(_KEY) for table in effects.values()]
-    first = tables[0]
-    eligible = pd.Series(True, index=first.index)
-    positive = pd.Series(True, index=first.index)
-    negative = pd.Series(True, index=first.index)
-    joint_power = pd.Series(1.0, index=first.index)
+    index = next(iter(effects.values())).set_index(_KEY).index
+    tables = [table.set_index(_KEY).reindex(index) for table in effects.values()]
+    eligible = pd.Series(True, index=index)
+    positive = pd.Series(True, index=index)
+    negative = pd.Series(True, index=index)
     for table in tables:
-        table = table.reindex(first.index)
         eligible &= table["share"].fillna(0.0) >= min_share
         # A comparison with a missing effect is false, so a cell without one meets nothing.
         positive &= (table["cp"] >= min_effect_cp) & (table["lo"] > 0)
         negative &= (table["cp"] <= -min_effect_cp) & (table["hi"] < 0)
-        joint_power *= table["power"].fillna(0.0)
-    signs = pd.concat([(table.reindex(first.index)["cp"] > 0) for table in tables], axis=1)
-    known = pd.concat([table.reindex(first.index)["cp"].notna() for table in tables], axis=1)
-    same_sign = known.all(axis=1) & (signs.all(axis=1) | ~signs.any(axis=1))
+    signs = pd.concat([table["cp"] > 0 for table in tables], axis=1)
+    known = pd.concat([table["cp"].notna() for table in tables], axis=1).all(axis=1)
+    ends = pd.concat([table[["lo", "hi"]].abs().max(axis=1) for table in tables], axis=1)
+    # A missing interval bounds nothing: its bound is missing, and `bounded` is false.
+    bound = ends.max(axis=1).where(known)
     return pd.DataFrame(
         {
             "eligible": eligible,
-            "joint_power": joint_power,
-            "same_sign": same_sign,
+            "same_sign": known & (signs.all(axis=1) | ~signs.any(axis=1)),
             "meets_size": eligible & (positive | negative),
+            "bound": bound,
+            "bounded": bound < min_effect_cp,
         }
     ).reset_index()
 
@@ -74,7 +77,6 @@ def decide(
     shuffled: Mapping[int, pd.DataFrame],
     min_effect_cp: float = MIN_EFFECT_CP,
     min_share: float = MIN_SHARE,
-    power_floor: float = POWER_FLOOR,
 ) -> Verdict:
     """The verdict from each generation's effects table (structural_model.effects) and the
     tables of the same generations with the structure shuffled."""
@@ -85,11 +87,11 @@ def decide(
         "replication": len(effects) >= 2,
         "size": bool(cells["meets_size"].any()),
         "control": not control["meets_size"].any(),
-        "power": bool(len(eligible) and (eligible["joint_power"] >= power_floor).all()),
+        "bounded": bool(len(eligible) and eligible["bounded"].all()),
     }
-    if all(conditions.values()):
+    if conditions["replication"] and conditions["size"] and conditions["control"]:
         outcome = "GO"
-    elif conditions["replication"] and conditions["control"] and conditions["power"]:
+    elif conditions["replication"] and conditions["control"] and conditions["bounded"]:
         outcome = "NO-GO"
     else:
         outcome = "INCONCLUSIVE"

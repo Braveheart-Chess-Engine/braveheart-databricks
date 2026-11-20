@@ -39,28 +39,34 @@ def design(rows: pd.DataFrame, structure: bool) -> tuple[np.ndarray, list[str]]:
     ±EVAL_CLIP, in units of 100 cp), `npm_diff:<phase>` and `pawns_d:<phase>`, and with
     `structure` also `<feature>:<phase>` for each structure difference. A column is zero
     outside its phase, so every term has its own coefficient per phase; the baseline's
-    columns come first."""
-    n = len(rows)
+    columns come first. Single precision, filled a column at a time: at millions of rows
+    the matrix is the largest thing on the driver."""
     phase = rows["phase"].to_numpy()
+    inside = {name: phase == name for name in PHASES}
     terms = {
-        "eval": np.clip(rows["eval_white"].to_numpy(dtype=np.float64), -EVAL_CLIP, EVAL_CLIP) / 100,
-        "npm_diff": rows["npm_diff"].to_numpy(dtype=np.float64),
-        "pawns_d": rows["pawns_d"].to_numpy(dtype=np.float64),
+        "eval": np.clip(rows["eval_white"].to_numpy(dtype=np.float32), -EVAL_CLIP, EVAL_CLIP) / 100,
+        "npm_diff": rows["npm_diff"].to_numpy(dtype=np.float32),
+        "pawns_d": rows["pawns_d"].to_numpy(dtype=np.float32),
     }
     names = ["intercept", "stm"]
-    columns = [np.ones(n), rows["stm"].to_numpy(dtype=np.float64)]
-    inside = {name: phase == name for name in PHASES}
+    names += [f"{term}:{name}" for name in PHASES for term in _BASELINE]
+    if structure:
+        names += [f"{feature}:{name}" for feature in STRUCTURE for name in PHASES]
+    matrix = np.zeros((len(rows), len(names)), dtype=np.float32)
+    matrix[:, 0] = 1.0
+    matrix[:, 1] = rows["stm"].to_numpy(dtype=np.float32)
+    column = 2
     for name in PHASES:
         for term in _BASELINE:
-            names.append(f"{term}:{name}")
-            columns.append(np.where(inside[name], terms[term], 0.0))
+            matrix[inside[name], column] = terms[term][inside[name]]
+            column += 1
     if structure:
         for feature in STRUCTURE:
-            values = rows[f"{feature}_d"].to_numpy(dtype=np.float64)
+            values = rows[f"{feature}_d"].to_numpy(dtype=np.float32)
             for name in PHASES:
-                names.append(f"{feature}:{name}")
-                columns.append(np.where(inside[name], values, 0.0))
-    return np.column_stack(columns).astype(np.float32), names
+                matrix[inside[name], column] = values[inside[name]]
+                column += 1
+    return matrix, names
 
 
 def _sigmoid(z: np.ndarray) -> np.ndarray:
@@ -193,19 +199,14 @@ def gain(
     return {"mean": float(total.sum() / count.sum()), "lo": float(lo), "hi": float(hi)}
 
 
-def _normal_cdf(z: float) -> float:
-    return 0.5 * (1 + math.erf(z / math.sqrt(2)))
-
-
-def effects(rows: pd.DataFrame, min_effect_cp: float) -> pd.DataFrame:
+def effects(rows: pd.DataFrame) -> pd.DataFrame:
     """Each structure feature's effect in each phase, from one fit on every row with no
     penalty: `cp`, how many centipawns the evaluation would have to move per unit of the
     feature's white-minus-black difference to predict the results it missed (positive: the
     side with more of the feature scores better than the evaluation says); its standard
-    error `se`, clustered by game; the 95% interval `lo` to `hi`; `share`, the phase's
-    rows where the sides differ in the feature; and `power`, the chance the interval would
-    exclude zero were the effect `min_effect_cp`. A feature with no variation in a phase,
-    or a phase with no rows, has share 0 and no effect (nan)."""
+    error `se`, clustered by game; the 95% interval `lo` to `hi`; and `share`, the phase's
+    rows where the sides differ in the feature. A feature with no variation in a phase, or
+    a phase with no rows, has share 0 and no effect (nan)."""
     X, names = design(rows, structure=True)
     y = rows["result"].to_numpy(dtype=np.float64)
     beta = fit(X, y)
@@ -233,7 +234,7 @@ def effects(rows: pd.DataFrame, min_effect_cp: float) -> pd.DataFrame:
             share = float(differs[inside].mean()) if inside.any() else 0.0
             b, a = position.get(f"{feature}:{name}"), position.get(f"eval:{name}")
             if b is None or a is None or beta[active][a] == 0:
-                out.append((feature, name, np.nan, np.nan, np.nan, np.nan, share, np.nan))
+                out.append((feature, name, np.nan, np.nan, np.nan, np.nan, share))
                 continue
             slope = beta[active][a]
             ratio = beta[active][b] / slope
@@ -241,9 +242,8 @@ def effects(rows: pd.DataFrame, min_effect_cp: float) -> pd.DataFrame:
                 covariance[b, b] - 2 * ratio * covariance[a, b] + ratio**2 * covariance[a, a]
             )
             cp, se = 100 * ratio, math.sqrt(max(variance, 0.0))
-            power = _normal_cdf(min_effect_cp / se - 1.96) if se > 0 else 1.0
-            out.append((feature, name, cp, se, cp - 1.96 * se, cp + 1.96 * se, share, power))
-    return pd.DataFrame(out, columns=["feature", "phase", "cp", "se", "lo", "hi", "share", "power"])
+            out.append((feature, name, cp, se, cp - 1.96 * se, cp + 1.96 * se, share))
+    return pd.DataFrame(out, columns=["feature", "phase", "cp", "se", "lo", "hi", "share"])
 
 
 def duplicate_share(rows: pd.DataFrame) -> float:

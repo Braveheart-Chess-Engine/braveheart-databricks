@@ -27,11 +27,12 @@ _CONDITIONS = {
     "replication": "at least two generations were analysed",
     "size": "an eligible cell has an effect of {cp:g} cp or more, the same way in every generation",
     "control": "the shuffled features show no such effect",
-    "power": "every eligible cell could have shown one",
+    "bounded": "every eligible cell's interval lies inside ±{cp:g} cp in every generation",
 }
+_NEEDS = "GO needs replication, size and control. NO-GO needs replication, control and bounded."
 _OUTCOMES = {
     "GO": "the pawn-pair net comparison is worth its cost",
-    "NO-GO": "the data could have shown an effect of the size that matters, and did not",
+    "NO-GO": "an effect of the size that matters is ruled out in every eligible cell",
     "INCONCLUSIVE": "nothing is read from this run",
 }
 
@@ -180,11 +181,14 @@ def effect_forest(
     min_effect_cp: float,
     sample_label: str,
     title: str = "What the evaluation misses, by structure",
+    caveat: str | None = None,
 ) -> go.Figure:
     """Each cell's effect and its 95% interval, a panel per phase and a mark per
     generation, with a line at the smallest effect that matters either way. Positive: the
     side with more of the feature scores better than the evaluation says. Cells that are
-    not eligible (`cells`, the verdict's) are faded."""
+    not eligible (`cells`, the verdict's) are faded. `caveat` is stamped under the title:
+    a run that decides nothing says so on the chart that would otherwise read as a
+    finding."""
     figure = make_subplots(
         rows=1, cols=len(PHASES), shared_yaxes=True, subplot_titles=PHASES, horizontal_spacing=0.03
     )
@@ -218,14 +222,12 @@ def effect_forest(
                             rows["lo"],
                             rows["hi"],
                             rows["share"],
-                            rows["power"],
                         ]
                     ),
                     hovertemplate=(
                         f"gen {gen}, {phase}<br>%{{customdata[0]}}: %{{x:+.1f}} cp "
                         "(%{customdata[1]:+.1f} to %{customdata[2]:+.1f})<br>the sides differ in "
-                        "%{customdata[3]:.1%} of positions; power %{customdata[4]:.0%}"
-                        "<extra></extra>"
+                        "%{customdata[3]:.1%} of positions<extra></extra>"
                     ),
                 ),
                 row=1,
@@ -245,6 +247,11 @@ def effect_forest(
         height=540,
     )
     _feature_axis(figure)
+    if caveat:
+        stamped = (
+            f'{figure.layout.title.text}<br><sup><span style="color:{_BAD}">⚠ {caveat}</span></sup>'
+        )
+        figure.update_layout(title={"text": stamped}, margin={"t": 178})
     return figure
 
 
@@ -298,23 +305,24 @@ def gain_intervals(
     )
 
 
-def power_grid(verdict: Verdict, power_floor: float, sample_label: str) -> go.Figure:
-    """The chance each eligible cell would have been detected in every generation at once,
-    were its effect the smallest that matters. A cell under the floor is marked ✗; a cell
-    that is not eligible is blank."""
+def bound_grid(verdict: Verdict, min_effect_cp: float, sample_label: str) -> go.Figure:
+    """How tightly each eligible cell is measured: the end of its 95% interval furthest
+    from zero, in any generation. The rule rules an effect out only when every one is
+    inside the threshold. A cell that reaches past it is marked ✗; a cell that is not
+    eligible is blank."""
     cells = verdict.cells.set_index(["feature", "phase"])
     z, text = [], []
     for feature in STRUCTURE:
         z_row, text_row = [], []
         for phase in PHASES:
             cell = cells.loc[(feature, phase)]
-            if not cell["eligible"]:
+            if not cell["eligible"] or pd.isna(cell["bound"]):
                 z_row.append(None)
                 text_row.append("–")
                 continue
-            power = float(cell["joint_power"])
-            z_row.append(power)
-            text_row.append(f"{power:.0%}" + ("" if power >= power_floor else " ✗"))
+            bound = float(cell["bound"])
+            z_row.append(min(bound, 2 * min_effect_cp))
+            text_row.append(f"±{bound:.1f}" + ("" if cell["bounded"] else " ✗"))
         z.append(z_row)
         text.append(text_row)
     figure = go.Figure(
@@ -325,65 +333,65 @@ def power_grid(verdict: Verdict, power_floor: float, sample_label: str) -> go.Fi
             text=text,
             texttemplate="%{text}",
             zmin=0,
-            zmax=1,
-            colorscale=[[0, "#16233b"], [1, _CATEGORY_PALETTE[0]]],
+            zmax=2 * min_effect_cp,
+            colorscale=[[0, _CATEGORY_PALETTE[0]], [1, "#16233b"]],
             xgap=2,
             ygap=2,
-            colorbar={"title": "power", "tickformat": ".0%"},
-            hovertemplate="%{y}, %{x}: %{text}<extra></extra>",
+            colorbar={"title": "cp"},
+            hovertemplate="%{y}, %{x}: %{text} cp<extra></extra>",
         )
     )
     return _finish(
         figure,
-        "Could the report have seen an effect of the size that matters?",
+        "How tightly is each cell measured?",
         sample_label,
-        detail=f"power in every generation at once; the rule asks for {power_floor:.0%} in every "
-        "eligible cell (✗: under it; –: not eligible)",
+        detail="the 95% interval's end furthest from zero, in any generation; an effect is "
+        f"ruled out only when every one is inside ±{min_effect_cp:g} cp "
+        "(✗: past it; –: not eligible)",
         xaxis={"showgrid": False, "zeroline": False},
         yaxis={"autorange": "reversed", "showgrid": False, "zeroline": False},
         height=460,
     )
 
 
-def verdict_banner(verdict: Verdict, min_effect_cp: float, sample_label: str) -> go.Figure:
+def verdict_banner(
+    verdict: Verdict, min_effect_cp: float, sample_label: str, as_registered: bool = True
+) -> go.Figure:
     """The outcome and the conditions behind it, each with a mark and its name: never
-    colour alone."""
+    colour alone. `as_registered` is whether the run used the registered parameters; one
+    that did not is not the registered result, and the title says so."""
     figure = go.Figure()
-    figure.add_annotation(
-        text=f"<b>{verdict.outcome}</b>",
-        x=0,
-        xref="paper",
-        xanchor="left",
-        y=1,
-        yref="paper",
-        yanchor="top",
-        showarrow=False,
-        font={"size": 40, "color": _TEXT},
-    )
-    figure.add_annotation(
-        text=_OUTCOMES[verdict.outcome],
-        x=0,
-        xref="paper",
-        xanchor="left",
-        y=0.68,
-        yref="paper",
-        yanchor="top",
-        showarrow=False,
-        font={"size": 15, "color": _TEXT},
-    )
+    lines = [
+        (f"<b>{verdict.outcome}</b>", 40, 1.0),
+        (_OUTCOMES[verdict.outcome], 15, 0.72),
+    ]
     for row, (name, holds) in enumerate(verdict.conditions.items()):
         mark = f'<span style="color:{_GOOD if holds else _BAD}">{"✓" if holds else "✗"}</span>'
+        lines.append(
+            (
+                f"{mark} <b>{name}</b>: {_CONDITIONS[name].format(cp=min_effect_cp)}",
+                14,
+                0.54 - 0.12 * row,
+            )
+        )
+    lines.append((_NEEDS, 12, 0.04))
+    for text, size, y in lines:
         figure.add_annotation(
-            text=f"{mark} <b>{name}</b>: {_CONDITIONS[name].format(cp=min_effect_cp)}",
+            text=text,
             x=0,
             xref="paper",
             xanchor="left",
-            y=0.46 - 0.15 * row,
+            y=y,
             yref="paper",
             yanchor="top",
             showarrow=False,
-            font={"size": 14, "color": _TEXT},
+            font={"size": size, "color": _TEXT},
         )
     figure.update_xaxes(visible=False)
     figure.update_yaxes(visible=False)
-    return _finish(figure, "The verdict, by the registered rule", sample_label, height=360)
+    title = (
+        "The verdict, by the registered rule"
+        if as_registered
+        else "The verdict of a run with other parameters: not the registered result"
+    )
+    return _finish(figure, title, sample_label, height=400)

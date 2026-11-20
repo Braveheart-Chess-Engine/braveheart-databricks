@@ -6,9 +6,10 @@ training a net with explicit pawn-relationship inputs (sparse pawn-pair features
 
 The report that answers it is the job `nnue-structural-analysis`
 ([notebook](../notebooks/nnue_structural_analysis.py)). This note is its
-registration: the rule below was written, and merged, before the report had run on
-real data. The note holds no result. The report computes the verdict from the rule
-each time it runs.
+registration: the rule below was written, and merged, before the report had run in
+the workspace. [What ran before that](#what-ran-before-the-rule-was-merged) is set out
+below. The note holds no result. The report computes the verdict from the rule each
+time it runs.
 
 ## The question
 
@@ -48,29 +49,41 @@ conditions:
    same sign in every generation, and each generation's 95% interval excludes zero.
 2. **Control.** The same analysis, with the features shuffled so they no longer
    belong to their positions, finds no such cell.
-3. **Power.** Every eligible cell has at least 80% power to be detected in every
-   generation at once (the product of the generations' powers) if its effect were
-   exactly `MIN_EFFECT_CP`.
+3. **Bounds.** Every eligible cell's 95% interval lies inside ±`MIN_EFFECT_CP`, in
+   every generation.
 
 The three outcomes:
 
 | Outcome | When | What follows |
 |:--|:--|:--|
-| **GO** | All three conditions hold | Design the pawn-pair net comparison ([below](#if-the-outcome-is-go)) |
-| **NO-GO** | Conditions 2 and 3 hold, and condition 1 fails | The data could have shown an effect of the size that matters and did not. Record it in the engine's research log |
-| **INCONCLUSIVE** | Anything else, or fewer than two generations | With condition 3 failing: raise `shards_per_generation` and run again. With condition 2 failing: the method found an effect where none can be, and is suspect. Nothing is read from either run |
+| **GO** | Conditions 1 and 2 hold | Design the pawn-pair net comparison ([below](#if-the-outcome-is-go)) |
+| **NO-GO** | Conditions 2 and 3 hold | An effect of the size that matters is ruled out in every eligible cell. Record it in the engine's research log |
+| **INCONCLUSIVE** | Anything else, or fewer than two generations | Nothing is read from the run. An interval that reaches past the threshold without meeting condition 1 is too wide to say: raise `shards_per_generation` and run again. With condition 2 failing, the method found an effect where none can be, and is suspect |
 
-**What the rule does not ask for.** The report also measures how much the structure
-features improve the prediction of results on held-out workers (the *gain*), with the
-shuffled features beside it. It is shown, and is not a condition. Predicting better
-is a much weaker test than measuring a coefficient. The 21 structure coefficients are
-fitted together, and each costs a little prediction whether or not it is real. In
-simulation the gain's z-score followed (L − k) / √(4L + 2k), where L is the sum of the
-cells' squared z-scores and k = 21 is the number of coefficients: 3.2 at L = 91 and
-8.8 at L = 292. One cell at the edge of the power condition has L of about 10, less
-than k, so its expected gain is below zero. A first draft of this rule made the gain
-a condition and let NO-GO follow from its failing, which would have called a real
-15 cp effect NO-GO. It was replaced before the report had read a real position.
+Conditions 1 and 3 cannot both hold: an estimate of 15 cp or more has an interval that
+reaches past 15. The space between them is deliberate. A real effect of exactly 15 cp
+is estimated above 15 half the time and below it half the time, so no rule can call
+it reliably either way; here it is GO when both generations' estimates land above the
+line and INCONCLUSIVE otherwise, and never NO-GO.
+
+**What the rule does not ask for.** Two things the first drafts asked for, both
+replaced before the report had run in the workspace:
+
+- **The predictive gain is not a condition.** The report also measures how much the
+  structure features improve the prediction of results on held-out workers, with the
+  shuffled features beside it, and shows it. Predicting better is a much weaker test
+  than measuring a coefficient: the 21 structure coefficients are fitted together, and
+  each costs a little prediction whether or not it is real. The gain's z-score should
+  be about (L − k) / √(4L + 2k), where L is the sum of the cells' squared z-scores and
+  k = 21. That is 3.5 and 7.8 at L = 91 and 292, where simulation gave 3.2 and 8.8.
+  One cell detected at z = 3.2 has L of about 10, less than k, so its expected gain is
+  below zero.
+- **Power is not a condition.** A draft let NO-GO follow from "the sample had 80%
+  power and the size condition failed". But that power was the chance of an interval
+  excluding zero, and the size condition also needs the estimate itself to reach
+  15 cp. Simulating that rule on a real 15 cp effect gave NO-GO 76% of the time at any
+  sample size. Condition 3 replaces it: NO-GO has to rule the effect out, not fail to
+  find it.
 
 The registered values live in
 [`registered.py`](../src/selfplay_analysis/registered.py), and a test holds this note
@@ -96,10 +109,10 @@ shards a generation read in full. Every count below is from that sample.
 | How many independent groups? | 96 shards cover 77 of generation 5's 192 worker groups and 78 of generation 6's 320: 25,749 and 27,388 games, 2,405,970 and 2,405,770 positions, 47% of games drawn in both |
 | Is the net's raw evaluation available? | Yes: `Board::evaluate()` in the engine's search crate at `v0.54.0`, whose embedded net is `net8x160-l050-r43390801430`. The net file is in the engine's public repository |
 | Can new labels be added to the dataset for a sample of shards? | Not sensibly. The relabel workflow works by generation and worker, it is the only writer to a bucket that keeps everything forever, and a label set for 192 shards would sit there incomplete |
-| How many shards does the power condition need? | About 643 a generation; the default is 672. Standard errors were measured on the 12 shards a generation read in full, with the effects themselves left unprinted, and they fall with the square root of the games. The least-powered eligible cell is passed pawns in the opening (the sides differ in 13% of opening positions; a standard error of 34 cp at 12 shards). The next need 168 to 193 shards. Keeping 16 positions a game instead of 24 would raise the median standard error by 0.8%, and 12 by 3.7% |
+| How many shards does a NO-GO need? | 1,200 a generation. Standard errors were measured on the 12 shards a generation read in full, with the effects themselves left unprinted, and they fall with the square root of the games. From them, the chance that all 20 eligible cells' intervals lie inside ±15 cp in both generations when no effect is real is 0.63 at 672 shards, 0.89 at 960 and 0.96 at 1,200 (0.90 at 1,200 if every standard error is 10% larger than measured). One cell sets the size: passed pawns in the opening, where the sides differ in 13% of positions (a standard error of 36 cp at 12 shards, against 20 cp for the next) |
 
-Three of those answers shaped the method. The sample is 672 shards a generation
-because the power condition needs it. Nearly every decisive game ends by win
+Three of those answers shaped the method. The sample is 1,200 shards a generation
+because ruling an effect out needs it. Nearly every decisive game ends by win
 adjudication (1,200 cp for four plies), so the result target uses every game: games
 that ended "naturally" are almost all draws. And the evaluation is computed inside
 the report rather than stored as a label set.
@@ -115,7 +128,8 @@ file. A shard whose records do not match its games is counted and left out, neve
 guessed at.
 
 **Thinning.** A game's positions share one result, so they are far from independent.
-Each game contributes at most 24 positions, evenly spaced through it.
+Each game contributes at most 12 positions, evenly spaced through it. Against 24, that
+raised the median standard error by 3.7% and halves the rows on the driver.
 
 **Features.** For each side, from the FEN's board field alone:
 
@@ -186,23 +200,26 @@ with standard errors clustered by game. An effect is 100 times the structure
 coefficient over the phase's evaluation coefficient (the evaluation enters in units of
 100 cp), with its interval by the delta method. A **positive** effect means the side
 with more of the feature scores better than the evaluation says: the net undervalues
-the feature. **Power** is the chance such an interval would exclude zero were the true
-effect `MIN_EFFECT_CP`, from the same standard error.
+the feature.
 
 **Control.** The structure differences are permuted across positions within cells of
 phase and evaluation (100 cp wide), a position's seven differences moving together.
 That keeps their distribution and breaks their link to the result. The effects are
-then measured again, exactly as before, and the size condition must not hold.
+then measured again, exactly as before, and the size condition must not hold. It
+guards against bias from the model's form, such as the wrong curve for the
+evaluation. It does not guard against standard errors that are too small, which the
+estimator's own tests cover.
 
 **Gain** (shown, not a condition) is the drop in log loss from adding the structure
 terms, on predictions each position gets from a model fitted without its worker group
 (five folds of worker groups, so no worker is on both sides). Its interval comes from
 resampling games 1,000 times. The shuffled features' gain is shown beside it.
 
-**The estimator's own tests.** Two properties are automated tests rather than report
-sections: a planted effect of 15 cp is recovered as 15 cp, and when nothing is planted
-the clustered intervals exclude zero about 5% of the time (4.1% over 4,200 simulated
-intervals of 3,000 games each).
+**The estimator's own tests.** Three properties are automated tests rather than report
+sections. A planted effect of 15 cp is recovered as 15 cp. When nothing is planted the
+clustered intervals exclude zero about 5% of the time (4.1% over 4,200 simulated
+intervals of 3,000 games each). And the standard error of a large effect that goes
+with the evaluation agrees with refitting on resampled games, which uses no formula.
 
 **Sensitivity.** `exclude_draw_adjudicated` reruns everything without the games that
 ended by draw adjudication (from ply 80, twelve plies within 10 cp), the one ending
@@ -239,20 +256,41 @@ In the workspace, open **Jobs & Pipelines**, then **nnue-structural-analysis**, 
 | Parameter | Default | Meaning |
 |:--|:--|:--|
 | `generations` | `5,6` | The generations analysed, each on its own. Fewer than two is INCONCLUSIVE |
-| `shards_per_generation` | `672` | Shards sampled a generation. Fewer may leave the power condition unmet |
+| `shards_per_generation` | `1200` | Shards sampled a generation. Fewer leave intervals too wide to rule an effect out |
 | `sampling_seed` | `0` | The sample's seed |
 | `min_effect_cp` | `15` | `MIN_EFFECT_CP`. Registered: not to be changed after a run |
-| `max_positions_per_game` | `24` | The thinning cap |
-| `exclude_draw_adjudicated` | `false` | The sensitivity run |
+| `max_positions_per_game` | `12` | The thinning cap |
+| `exclude_draw_adjudicated` | `false` | The sensitivity run. Its verdict is not the registered result |
 | `net_path` | empty | A copy of the net file in the workspace. Empty downloads it from the engine's repository |
 
 The run reads its shards twice, each time through one Python pass per shard, and
 fits a handful of small models on the driver. It is a serverless notebook task, as
 the calibration report is. One core turns a shard of about 25,000 positions into rows
 in under a second, evaluation included: 26,400 to 27,500 positions a second on three
-of the sampled shards, on an Apple M-series core. The default sample is 1,344 shards:
-about 33.6 million positions a pass, of which about 8.6 million (24 a game) reach the
+of the sampled shards, on an Apple M-series core. The default sample is 2,400 shards:
+about 60 million positions a pass, of which about 8.2 million (12 a game) reach the
 models.
+
+A run with other generations, another `min_effect_cp`, another thinning cap or the
+sensitivity switch says in its verdict that it is not the registered result.
+
+## What ran before the rule was merged
+
+Nothing below looked at an effect, and the rule's two revisions were made without one.
+
+- **Counts and checks** on a sample drawn as the report draws its own: the table
+  under [What the data is](#what-the-data-is).
+- **Standard errors**, with the effects themselves left unprinted, on the 24 shards
+  read in full: they set the sample size and the thinning cap.
+- **One end-to-end run of the notebook's code** on those 24 shards, on a laptop, to
+  prove it runs: 601,283 positions, every shard matched to its games. That is 1% of
+  the registered sample, and by the rule nothing is read from a run that small. Its
+  figures and tables were not rendered. Its printed outcome and conditions went to a
+  log the author did not open; an automated reviewer of this change did, reported none
+  of it, and the log was deleted. The second revision of the rule came after that
+  run, on a flaw the reviewer showed by simulation. Rerun under the revised rule, the
+  check told the author one thing: that the outcome on 1% of the sample was
+  INCONCLUSIVE.
 
 ## Not done here
 
@@ -280,5 +318,5 @@ that result says whether the inputs make the engine stronger.
 ## If the outcome is NO-GO
 
 Record it in the engine's `docs/research-log.md` with the `MIN_EFFECT_CP` that was
-ruled out and the sample it was ruled out on, so the idea is not proposed again
-without new evidence.
+ruled out, the widest interval end among the eligible cells and the sample, so the
+idea is not proposed again without new evidence.

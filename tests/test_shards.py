@@ -124,6 +124,39 @@ def test_a_record_whose_fen_is_cut_short_is_not_a_record(shard) -> None:
     assert rows["ok"].tolist() == [True] * 5 + [False]
 
 
+@pytest.mark.parametrize(
+    "board",
+    [
+        "4k3/8/8/8/8/8/4x3/4K3",  # a letter that is no piece
+        "4k3/8/8/8/8/8/9/4K3",  # a rank of nine squares
+        "4k3/8/8/8/8/8/4K3",  # seven ranks
+        "8/8/8/8/8/8/8/4K3",  # no black king
+        "4k3/8/8/8/8/8/8/3KK3",  # two white kings
+        "4k3/pppppppp/pppppppp/pppppppp/PPPPPPPP/PPPPPPPP/8/4K3",  # 42 pieces
+    ],
+)
+def test_a_board_that_is_not_a_position_is_not_a_record(shard, board: str) -> None:
+    net = nnue.load_net(struct.pack(f"<{768 * 128 + 128 + 2 * 128 + 1}h", *[0] * 98_689))
+    rows = shard_rows(shard.positions + f"{board} w - - 0 9 | 12 | 0.5\n", shard.games, net=net)
+    assert rows["ok"].tolist() == [True] * 5 + [False]
+    assert rows["aligned"].all() and rows["eval_white"].notna().tolist() == [True] * 5 + [False]
+
+
+@pytest.mark.parametrize(
+    "games",
+    [
+        '{"start_fen": null, "moves": [], "scores": [], "result": 0.5, "termination": "x"}\n',
+        '{"moves": ["a1a2"], "scores": [1], "result": 0.5}\n',
+        '{"start_fen": "4k3/8/8/8/8/8/8/4K3 w - - 0 x", "scores": [1], "result": 0.5, '
+        '"termination": "x"}\n',
+        "[1, 2, 3]\n",
+    ],
+)
+def test_a_games_file_of_the_wrong_shape_leaves_the_shard_unaligned(shard, games: str) -> None:
+    rows = shard_rows(shard.positions, games, net=None)
+    assert not rows["aligned"].any() and rows["ok"].all()
+
+
 def test_a_shard_that_does_not_match_its_games_is_unaligned(shard) -> None:
     rows = shard_rows(shard.positions, shard.games.splitlines()[0] + "\n", net=None)
     assert not rows["aligned"].any() and rows["game"].isna().all() and not rows["kept"].any()

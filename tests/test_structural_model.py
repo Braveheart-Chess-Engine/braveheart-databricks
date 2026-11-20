@@ -19,18 +19,24 @@ from selfplay_analysis.structure import STRUCTURE
 
 
 def make_rows(
-    n_games: int, per_game: int, effect_cp: float, seed: int, noise: float = 0.0
+    n_games: int,
+    per_game: int,
+    effect_cp: float,
+    seed: int,
+    noise: float = 0.0,
+    with_feature: float = 0.0,
 ) -> pd.DataFrame:
     """Model rows as structural_frames.model_rows returns them. Per game: a fold, a phase,
     a difference for each structure feature and an evaluation, which its rows share unless
-    `noise` (centipawns) spreads them around it. One result per game, drawn (with draws)
+    `noise` (centipawns) spreads them around it; `with_feature` adds that many centipawns
+    of evaluation per isolated pawn of difference. One result per game, drawn (with draws)
     so that its expectation is sigmoid((eval + effect_cp * isolated_d) / 400) at the
     game's first row: without noise the model fitted is the one the data came from."""
     rng = np.random.default_rng(seed)
     game = np.repeat(np.arange(n_games), per_game)
-    level = rng.normal(0, 150, n_games)
-    evals = np.round(level[game] + rng.normal(0, noise, len(game)))
     differences = {feature: rng.integers(-2, 3, n_games) for feature in STRUCTURE}
+    level = rng.normal(0, 150, n_games) + with_feature * differences["isolated"]
+    evals = np.round(level[game] + rng.normal(0, noise, len(game)))
     first = evals.reshape(n_games, per_game)[:, 0]
     expected = 1 / (1 + np.exp(-(first + effect_cp * differences["isolated"]) / 400))
     draw = np.minimum(expected, 1 - expected)
@@ -72,6 +78,11 @@ def test_the_design_has_a_column_per_term_and_phase() -> None:
         assert row[f"passed:{phase}"] == (first["passed_d"] if inside else 0.0)
 
 
+def test_the_design_is_single_precision() -> None:
+    matrix, _ = design(make_rows(50, 2, effect_cp=0.0, seed=0), structure=True)
+    assert matrix.dtype == np.float32 and matrix.flags["C_CONTIGUOUS"]
+
+
 def test_the_evaluation_is_clipped() -> None:
     rows = make_rows(4, 1, effect_cp=0.0, seed=0)
     rows["phase"] = "endgame"
@@ -111,28 +122,44 @@ def test_a_planted_effect_is_recovered_in_centipawns() -> None:
     # +15 cp an isolated pawn: 0.25 a pawn of evaluation, 0.25 * 0.15 an isolated pawn.
     logit = 0.25 * rows["eval_white"] / 100 + 0.25 * 0.15 * rows["isolated_d"]
     rows["result"] = 1 / (1 + np.exp(-logit))
-    table = effects(rows, min_effect_cp=15.0).set_index(["feature", "phase"])
+    table = effects(rows).set_index(["feature", "phase"])
     assert np.allclose(table.xs("isolated", level="feature")["cp"], 15.0, atol=0.01)
     assert np.allclose(table.xs("doubled", level="feature")["cp"], 0.0, atol=0.01)
 
 
 def test_effects_have_a_row_per_feature_and_phase() -> None:
-    table = effects(make_rows(600, 4, effect_cp=0.0, seed=2), min_effect_cp=15.0)
-    assert list(table.columns) == ["feature", "phase", "cp", "se", "lo", "hi", "share", "power"]
+    table = effects(make_rows(600, 4, effect_cp=0.0, seed=2))
+    assert list(table.columns) == ["feature", "phase", "cp", "se", "lo", "hi", "share"]
     assert list(zip(table["feature"], table["phase"], strict=True)) == [
         (feature, phase) for feature in STRUCTURE for phase in PHASES
     ]
     assert np.allclose(table["lo"], table["cp"] - 1.96 * table["se"])
     assert np.allclose(table["hi"], table["cp"] + 1.96 * table["se"])
-    assert ((table["power"] > 0) & (table["power"] < 1)).all()
     # Differences are drawn from -2..2, so the sides differ in four games of five.
     assert table["share"].between(0.7, 0.9).all()
 
 
-def test_power_rises_as_the_error_falls() -> None:
-    few = effects(make_rows(400, 4, effect_cp=0.0, seed=7), min_effect_cp=15.0)
-    many = effects(make_rows(6400, 4, effect_cp=0.0, seed=7), min_effect_cp=15.0)
-    assert (many["se"] < few["se"] / 2).all() and (many["power"] > few["power"]).all()
+def test_the_interval_of_a_large_effect_matches_refitting_resampled_games() -> None:
+    # The effect is a ratio, so its error has three terms: the feature coefficient's, the
+    # evaluation coefficient's (which matters when the ratio is large) and their
+    # covariance (which matters when the feature goes with the evaluation). Here both do:
+    # 150 cp an isolated pawn, and 40 cp of evaluation with each. Refitting on games drawn
+    # with replacement measures the same error with no formula.
+    rows = make_rows(3000, 2, effect_cp=150.0, seed=11, with_feature=40.0)
+    table = effects(rows).set_index(["feature", "phase"])
+    games = rows["game_id"].to_numpy().reshape(-1, 2)[:, 0]
+    by_game = rows.set_index("game_id")
+    rng = np.random.default_rng(0)
+    refits = []
+    for _ in range(120):
+        picked = rng.choice(games, len(games))
+        sample = by_game.loc[picked].reset_index(drop=True)
+        sample["game_id"] = np.repeat(np.arange(len(picked)), 2)  # a game drawn twice is two games
+        refits.append(effects(sample).set_index(["feature", "phase"])["cp"])
+    spread = pd.concat(refits, axis=1).std(axis=1)
+    planted = [("isolated", phase) for phase in PHASES]
+    assert (table.loc[planted, "se"] / spread.loc[planted]).between(0.8, 1.25).all()
+    assert ((table.loc[planted, "cp"] - 150).abs() < 4 * table.loc[planted, "se"]).all()
 
 
 def test_clustered_errors_hold_their_level_when_nothing_is_there() -> None:
@@ -141,15 +168,13 @@ def test_clustered_errors_hold_their_level_when_nothing_is_there() -> None:
     # 21 effects, none of which is real, should exclude zero about one time in twenty.
     excluded = []
     for seed in range(100):
-        table = effects(make_rows(3000, 4, effect_cp=0.0, seed=seed, noise=60.0), 15.0)
+        table = effects(make_rows(3000, 4, effect_cp=0.0, seed=seed, noise=60.0))
         excluded.append(((table["lo"] > 0) | (table["hi"] < 0)).to_numpy())
     assert 0.03 <= np.mean(excluded) <= 0.07
 
 
 def test_a_real_effect_is_found_where_it_was_put() -> None:
-    table = effects(make_rows(30_000, 2, effect_cp=60.0, seed=8), 15.0).set_index(
-        ["feature", "phase"]
-    )
+    table = effects(make_rows(30_000, 2, effect_cp=60.0, seed=8)).set_index(["feature", "phase"])
     planted = table.xs("isolated", level="feature")
     assert (planted["lo"] > 0).all() and planted["cp"].between(40, 80).all()
     others = table.drop("isolated", level="feature")
@@ -159,7 +184,7 @@ def test_a_real_effect_is_found_where_it_was_put() -> None:
 def test_a_feature_absent_from_a_phase_is_missing_not_fatal() -> None:
     rows = make_rows(800, 6, effect_cp=0.0, seed=3)
     rows.loc[rows["phase"] == "opening", "protected_passed_d"] = 0
-    table = effects(rows, 15.0).set_index(["feature", "phase"])
+    table = effects(rows).set_index(["feature", "phase"])
     assert np.isnan(table.loc[("protected_passed", "opening"), "cp"])
     assert table.loc[("protected_passed", "opening"), "share"] == 0.0
     assert np.isfinite(table.loc[("isolated", "opening"), "cp"])
@@ -168,7 +193,7 @@ def test_a_feature_absent_from_a_phase_is_missing_not_fatal() -> None:
 def test_a_phase_with_no_positions_is_missing_not_fatal() -> None:
     rows = make_rows(800, 6, effect_cp=0.0, seed=3)
     rows = rows[rows["phase"] != "opening"].reset_index(drop=True)
-    table = effects(rows, 15.0).set_index(["feature", "phase"])
+    table = effects(rows).set_index(["feature", "phase"])
     assert table.xs("opening", level="phase")["cp"].isna().all()
     assert (table.xs("opening", level="phase")["share"] == 0.0).all()
     assert np.isfinite(table.loc[("isolated", "endgame"), "cp"])
@@ -211,6 +236,19 @@ def test_gain_is_zero_for_identical_predictions_and_positive_for_a_real_effect()
     found = gain(rows, base, full)
     assert found["lo"] > 0.0 and found["lo"] <= found["mean"] <= found["hi"]
     assert found == gain(rows, base, full)  # seeded
+
+
+def test_the_gains_interval_resamples_games_not_positions() -> None:
+    # Eight identical positions a game: the games, not their rows, are the evidence. The
+    # interval must be as wide as the games' own means say, which is about the square root
+    # of eight times wider than resampling rows would make it.
+    rows = make_rows(1500, 8, effect_cp=60.0, seed=9)
+    base, full = cross_fitted(rows, False), cross_fitted(rows, True)
+    found = gain(rows, base, full)
+    y = rows["result"].to_numpy()
+    per_game = pd.Series(log_loss(base, y) - log_loss(full, y)).groupby(rows["game_id"]).mean()
+    expected = per_game.std() / np.sqrt(len(per_game))
+    assert (found["hi"] - found["lo"]) / 3.92 == pytest.approx(expected, rel=0.1)
 
 
 def test_shuffled_features_gain_nothing() -> None:

@@ -102,8 +102,8 @@ interactively, with the same parameters as widgets.
 
 ### Running the structural analysis
 
-**nnue-structural-analysis** runs the same way. **Run now** samples 672 shards a
-generation of generations 5 and 6 (about 33.6 million positions a pass, 8.6 million of
+**nnue-structural-analysis** runs the same way. **Run now** samples 1,200 shards a
+generation of generations 5 and 6 (about 60 million positions a pass, 8.2 million of
 them in the models), evaluates each position with the engine's current net and
 measures, per pawn-structure feature and phase, how far the evaluation is from the
 results. Its last chart is the verdict. What the rule is, why the sample is that
