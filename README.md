@@ -114,6 +114,16 @@ The report downloads the net file from the engine's public repository and checks
 SHA-256. If the workspace cannot reach it, upload the file and give its path as
 `net_path`.
 
+### What a run can cost
+
+The jobs run on serverless compute, which bills for as long as a run lasts, and
+Databricks has no setting that stops usage at a dollar figure. So every job sets
+`timeout_seconds`, and Databricks stops a run that outlasts it: a quarter of an hour
+for the calibration report, an hour for the structural analysis. A test fails any job
+added without one, or with more than two hours. The limit covers job runs only: a
+notebook run interactively has none, and a budget alert in the account console is the
+safeguard there.
+
 ### Developing
 
 ```sh
