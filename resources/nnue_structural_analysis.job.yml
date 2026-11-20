@@ -1,0 +1,33 @@
+resources:
+  jobs:
+    nnue_structural_analysis:
+      name: nnue-structural-analysis
+      description: >-
+        Whether the current net's raw evaluation is wrong by pawn structure by enough to
+        justify a pawn-pair input experiment, decided by a rule registered before any result
+        (docs/nnue-structural-research.md): GO, NO-GO or INCONCLUSIVE, with interactive
+        charts. Started by hand; samples 672 shards a generation of generations 5 and 6
+        unless told otherwise.
+      # No cluster: a notebook task without one runs on serverless compute.
+      tasks:
+        - task_key: report
+          notebook_task:
+            notebook_path: ../notebooks/nnue_structural_analysis.py
+      parameters:
+        - name: generations
+          default: "5,6"
+        - name: shards_per_generation
+          default: "672"
+        - name: sampling_seed
+          default: "0"
+        - name: min_effect_cp
+          default: "15"
+        - name: max_positions_per_game
+          default: "24"
+        - name: exclude_draw_adjudicated
+          default: "false"
+        - name: net_path
+          default: ""
+      max_concurrent_runs: 1
+      tags:
+        project: braveheart-databricks
