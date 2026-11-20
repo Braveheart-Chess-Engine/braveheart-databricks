@@ -20,5 +20,8 @@ resources:
         - name: label_set
           default: original
       max_concurrent_runs: 1
+      # The hard stop on what a run can cost: serverless compute bills for as long as a run
+      # lasts, and Databricks stops this one after a quarter of an hour; a run takes about a minute and a half.
+      timeout_seconds: 900
       tags:
         project: braveheart-databricks

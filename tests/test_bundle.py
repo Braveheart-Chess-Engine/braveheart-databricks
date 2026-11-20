@@ -65,6 +65,22 @@ def test_the_job_runs_the_notebook_on_serverless_and_only_by_hand() -> None:
     assert JOB["max_concurrent_runs"] == 1
 
 
+def test_every_job_has_a_time_limit() -> None:
+    # Serverless compute bills for as long as a run lasts, and Databricks has no setting that
+    # stops usage at a dollar figure: a time limit on the run is the hard stop. Every job
+    # sets one, of two hours at most, so a run that hangs is killed rather than billed.
+    jobs = {}
+    for path in sorted((ROOT / "resources").glob("*.yml")):
+        jobs.update(yaml.safe_load(path.read_text())["resources"].get("jobs", {}))
+    assert set(jobs) >= {"selfplay_calibration", "nnue_structural_analysis"}
+    for name, job in jobs.items():
+        assert 0 < job.get("timeout_seconds", 0) <= 2 * 60 * 60, name
+
+
+def test_the_calibration_report_stops_after_a_quarter_of_an_hour() -> None:
+    assert JOB["timeout_seconds"] == 15 * 60  # a run takes about a minute and a half
+
+
 def test_the_job_parameters_and_their_defaults() -> None:
     assert {p["name"]: p["default"] for p in JOB["parameters"]} == {
         "shards_per_generation": "24",

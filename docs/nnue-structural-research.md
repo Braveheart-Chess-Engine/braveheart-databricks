@@ -274,6 +274,10 @@ models.
 A run with other generations, another `min_effect_cp`, another thinning cap or the
 sensitivity switch says in its verdict that it is not the registered result.
 
+Databricks stops a run after an hour (`timeout_seconds` in the job). The first run was
+estimated at 20 to 45 minutes; one stopped at the limit has cost about what an hour of
+serverless compute costs, and says the estimate was wrong.
+
 ## What ran before the rule was merged
 
 Nothing below looked at an effect, and the rule's two revisions were made without one.

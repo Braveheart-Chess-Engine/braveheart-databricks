@@ -30,6 +30,10 @@ def test_the_job_runs_the_notebook_on_serverless_and_only_by_hand() -> None:
     assert JOB["tags"] == {"project": "braveheart-databricks"}
 
 
+def test_a_run_is_stopped_after_an_hour() -> None:
+    assert JOB["timeout_seconds"] == 60 * 60
+
+
 def test_the_job_parameters_and_their_defaults() -> None:
     assert DEFAULTS == {
         "generations": "5,6",
