@@ -234,7 +234,9 @@ In the workspace, open **Jobs & Pipelines**, then **nnue-structural-analysis**, 
 
 The run reads its shards twice, each time through one Python pass per shard, and
 fits a handful of small models on the driver. It is a serverless notebook task, as
-the calibration report is.
+the calibration report is. One core turns a shard of about 25,000 positions into rows
+in under a second, evaluation included: 26,400 to 27,500 positions a second on three
+of the sampled shards, on an Apple M-series core. The default sample is 192 shards.
 
 ## Not done here
 
