@@ -22,5 +22,10 @@ MAX_POSITIONS_PER_GAME = 24
 EVAL_CLIP = 2000
 #: The ridge penalty of the cross-fitted models (the effects are fitted without one).
 RIDGE = 1.0
+#: Shards sampled a generation: what the power condition needs for its least-powered
+#: eligible cell (passed pawns in the opening, about 643), from standard errors measured
+#: before any effect was looked at.
+SHARDS_PER_GENERATION = 672
 #: The most rows collected to the driver for the model; beyond it, whole games are sampled.
-MAX_MODEL_ROWS = 6_000_000
+#: The default sample is about 8.6 million.
+MAX_MODEL_ROWS = 12_000_000
