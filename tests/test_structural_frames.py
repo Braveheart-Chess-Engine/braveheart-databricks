@@ -203,6 +203,14 @@ def test_model_rows_are_the_kept_rows_of_aligned_shards(spark, paths) -> None:
     for column in ("fold", "ply", "stm", "result", "termination", "npm_diff", "phase"):
         assert column in rows.columns
     assert "position_hash" in rows.columns and "eval_white" in rows.columns
+    # Compact on the driver: names as categories, differences as single bytes.
+    assert rows["phase"].dtype == "category" and set(rows["phase"]) == {"endgame"}
+    assert rows["termination"].dtype == "category"
+    endings = rows.groupby("game_id")["termination"].first().astype(str).value_counts()
+    assert endings.to_dict() == {"win-adjudication": 2, "repetition": 1}
+    assert rows["passed_d"].dtype == "int8" and rows["pawns_d"].dtype == "int8"
+    widths = [1 if dtype == "category" else dtype.itemsize for dtype in rows.dtypes]
+    assert sum(widths) <= 56  # bytes a row
 
 
 def test_model_rows_over_the_cap_are_whole_games_and_the_same_every_time(spark, paths) -> None:

@@ -22,19 +22,22 @@ from pyspark.sql import functions as F
 import selfplay_analysis
 
 from .nnue import load_net
+from .phase import PHASES
 from .registered import MAX_MODEL_ROWS, MAX_POSITIONS_PER_GAME
 from .sampling import games_path_for
-from .shards import COLUMNS, SCHEMA, fold_of, shard_rows
+from .shards import SCHEMA, fold_of, shard_rows
+from .structure import STRUCTURE
 
-#: The structure features the model uses, as white's count minus black's.
-STRUCTURE = (
-    "isolated",
-    "doubled",
-    "islands",
-    "connected",
-    "passed",
-    "protected_passed",
-    "passed_rank",
+#: How datagen ends a game (braveheart-selfplay's docs/datagen.md).
+TERMINATIONS = (
+    "checkmate",
+    "stalemate",
+    "repetition",
+    "fifty-moves",
+    "insufficient-material",
+    "win-adjudication",
+    "draw-adjudication",
+    "max-plies",
 )
 _PROVENANCE = "gen INT, file STRING, run STRING, task STRING, worker INT, fold TINYINT"
 _SHARD = re.compile(
@@ -190,6 +193,14 @@ def summary(table: DataFrame) -> pd.DataFrame:
     return counted.toPandas()
 
 
+def _code(column: str, names: Sequence[str]) -> Column:
+    """A name as its index in `names`, or len(names) for any other: one byte a row."""
+    code = F.lit(len(names))
+    for index, name in reversed(list(enumerate(names))):
+        code = F.when(F.col(column) == name, index).otherwise(code)
+    return code.cast("byte").alias(column)
+
+
 def model_rows(
     table: DataFrame, kept: int, max_rows: int = MAX_MODEL_ROWS
 ) -> tuple[pd.DataFrame, float]:
@@ -197,27 +208,31 @@ def model_rows(
     aligned shards that survive thinning, with `game_id` (a hash of the file and the game)
     and each structure feature and the pawn count as white's minus black's (`<feature>_d`,
     `pawns_d`). `kept` is how many such rows there are (the summary's count): beyond
-    `max_rows`, whole games are sampled by their `game_id`, the same ones every time."""
+    `max_rows`, whole games are sampled by their `game_id`, the same ones every time.
+    The table is millions of rows on the driver, so it is compact: the phase and the
+    ending are categories and the differences single bytes."""
     share = 1.0 if kept <= max_rows else max_rows / kept
     rows = table.where(F.col("ok") & F.col("aligned") & F.col("kept")).select(
-        "gen",
+        F.col("gen").cast("short").alias("gen"),
         "fold",
         F.xxhash64("file", "game").alias("game_id"),
         "ply",
         "stm",
         "score_white",
         "result",
-        "termination",
+        _code("termination", TERMINATIONS),
         "npm_diff",
-        "phase",
+        _code("phase", PHASES),
         "position_hash",
         "eval_white",
-        _difference("pawns").alias("pawns_d"),
-        *(_difference(feature).alias(f"{feature}_d") for feature in STRUCTURE),
+        _difference("pawns").cast("byte").alias("pawns_d"),
+        *(_difference(feature).cast("byte").alias(f"{feature}_d") for feature in STRUCTURE),
     )
     if share < 1.0:
         rows = rows.where(F.pmod(F.col("game_id"), F.lit(1_000_000)) < int(share * 1_000_000))
-    return rows.toPandas(), share
-
-
-__all__ = ["COLUMNS", "STRUCTURE", "model_rows", "read_shards", "summary"]
+    frame = rows.toPandas()
+    frame["phase"] = pd.Categorical.from_codes(frame["phase"], categories=list(PHASES))
+    frame["termination"] = pd.Categorical.from_codes(
+        frame["termination"], categories=[*TERMINATIONS, "other"]
+    )
+    return frame, share

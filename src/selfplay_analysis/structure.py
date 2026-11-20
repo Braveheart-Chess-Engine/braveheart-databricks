@@ -32,6 +32,8 @@ FEATURES = (
     "protected_passed",
     "passed_rank",
 )
+#: The features that are structure rather than material: everything but the pawn count.
+STRUCTURE = FEATURES[1:]
 
 
 class PawnStructure(NamedTuple):
