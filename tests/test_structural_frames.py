@@ -215,4 +215,5 @@ def test_model_rows_over_the_cap_are_whole_games_and_the_same_every_time(spark, 
     again, _ = model_rows(table, kept=7, max_rows=3)
     assert share == pytest.approx(3 / 7)
     assert sorted(first["position_hash"]) == sorted(again["position_hash"])
-    assert (first.groupby("game_id").size() == sizes[first["game_id"].unique()]).all()
+    sampled = first.groupby("game_id").size()
+    assert (sampled == sizes.loc[sampled.index]).all()
